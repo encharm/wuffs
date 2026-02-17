@@ -43,6 +43,12 @@ pub struct decoder? implements base.image_decoder(
         sub_chunk_has_padding : base.bool,
 
         is_vp8_lossy : base.bool,
+        is_vp8x      : base.bool,
+        has_alpha     : base.bool,
+
+        // VP8X-calculated workbuf length (VP8 Y/U/V planes + optional alpha).
+        vp8x_workbuf_len : base.u64,
+        vp8l_alpha_workbuf_len : base.u64,
 
         frame_config_io_position : base.u64,
 
@@ -199,7 +205,7 @@ pri func decoder.do_decode_image_config?(dst: nptr base.image_config, src: base.
 
     this.frame_config_io_position = args.src.position()
 
-    if (not this.is_vp8_lossy) and (args.dst <> nullptr) {
+    if ((not this.is_vp8_lossy) or this.is_vp8x) and (args.dst <> nullptr) {
         args.dst.set!(
                 pixfmt: this.pixfmt,
                 pixsub: 0,
@@ -213,9 +219,11 @@ pri func decoder.do_decode_image_config?(dst: nptr base.image_config, src: base.
 }
 
 pri func decoder.do_decode_image_config_limited?(dst: nptr base.image_config, src: base.io_reader) {
-    var c32    : base.u32
-    var r_mark : base.u64
-    var status : base.status
+    var c32      : base.u32
+    var r_mark   : base.u64
+    var status   : base.status
+    var flags    : base.u8
+    var mb_width : base.u32[..= 0x400]
 
     c32 = args.src.read_u32le?()
     if c32 <> 'WEBP'le {
@@ -228,7 +236,7 @@ pri func decoder.do_decode_image_config_limited?(dst: nptr base.image_config, sr
     } else if c32 == 'VP8L'le {
         // No-op.
     } else if c32 == 'VP8X'le {
-        return "#unsupported WebP file"
+        this.is_vp8x = true
     } else {
         return "#bad header"
     }
@@ -238,6 +246,62 @@ pri func decoder.do_decode_image_config_limited?(dst: nptr base.image_config, sr
         return "#bad header"
     }
     this.sub_chunk_has_padding = (this.sub_chunk_length & 1) <> 0
+
+    if this.is_vp8x {
+        // Parse VP8X extended header (10 bytes).
+        if this.sub_chunk_length < 10 {
+            return "#bad header"
+        }
+        flags = args.src.read_u8?()
+        this.has_alpha = ((flags & 0x10) <> 0)
+        // Skip 3 reserved bytes.
+        c32 = args.src.read_u24le_as_u32?()
+        // Canvas width (24-bit LE) + 1.
+        c32 = args.src.read_u24le_as_u32?()
+        this.width = (c32 + 1) & 0x3FFF
+        // Canvas height (24-bit LE) + 1.
+        c32 = args.src.read_u24le_as_u32?()
+        this.height = (c32 + 1) & 0x3FFF
+
+        if (this.width == 0) or (this.height == 0) {
+            return "#bad header"
+        }
+
+        // Compute VP8X workbuf length.
+        // VP8 needs mb_width * mb_height * 384.
+        // VP8L alpha decode needs 4*W*H + 4*transform_size.
+        // workbuf = max(vp8_planes, vp8l_decode) + alpha_plane.
+        mb_width = (this.width + 15) / 16
+        this.vp8x_workbuf_len = (mb_width as base.u64) * ((((this.height + 15) / 16) * 384) as base.u64)
+        if this.has_alpha {
+            // VP8L alpha decode space: 4*W*H + 4*ceil(W/4)*ceil(H/4)*4.
+            this.vp8l_alpha_workbuf_len =
+                    (4 * (this.width as base.u64) * (this.height as base.u64)) +
+                    (16 * ((((this.width + 3) >> 2) * ((this.height + 3) >> 2)) as base.u64))
+            if this.vp8l_alpha_workbuf_len > this.vp8x_workbuf_len {
+                this.vp8x_workbuf_len = this.vp8l_alpha_workbuf_len
+            }
+            this.vp8x_workbuf_len ~mod+= (this.width as base.u64) * (this.height as base.u64)
+        }
+
+        // Set pixel format based on alpha presence.
+        if this.has_alpha {
+            this.pixfmt = base.PIXEL_FORMAT__BGRA_NONPREMUL
+        } else {
+            this.pixfmt = base.PIXEL_FORMAT__BGRX
+        }
+
+        // Skip remaining VP8X chunk data + padding. Sub-chunk iteration
+        // is deferred to decode_frame so we can process ALPH before VP8.
+        this.sub_chunk_length ~sat-= 10
+        if this.sub_chunk_length > 0 {
+            args.src.skip_u32?(n: this.sub_chunk_length)
+        }
+        if this.sub_chunk_has_padding {
+            args.src.skip_u32?(n: 1)
+        }
+        return ok
+    }
 
     while true {
         io_limit (io: args.src, limit: this.sub_chunk_length as base.u64) {
@@ -295,10 +359,12 @@ pub func decoder.decode_frame_config?(dst: nptr base.frame_config, src: base.io_
     var status : base.status
 
     while true {
-        if this.is_vp8_lossy {
-            status =? this.vp8.decode_frame_config?(dst: args.dst, src: args.src)
-        } else {
+        if this.is_vp8x or (not this.is_vp8_lossy) {
+            // VP8X and VP8L: WebP decoder handles frame_config.
             status =? this.do_decode_frame_config?(dst: args.dst, src: args.src)
+        } else {
+            // VP8 (non-VP8X): delegate to VP8 decoder.
+            status =? this.vp8.decode_frame_config?(dst: args.dst, src: args.src)
         }
         if (status == base."$short read") and args.src.is_closed() {
             return "#truncated input"
@@ -348,7 +414,9 @@ pub func decoder.decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reader, 
     var status : base.status
 
     while true {
-        if this.is_vp8_lossy {
+        if this.is_vp8x {
+            status =? this.do_decode_frame_vp8x?(dst: args.dst, src: args.src, blend: args.blend, workbuf: args.workbuf, opts: args.opts)
+        } else if this.is_vp8_lossy {
             status =? this.vp8.decode_frame?(dst: args.dst, src: args.src, blend: args.blend, workbuf: args.workbuf, opts: args.opts)
         } else {
             status =? this.do_decode_frame?(dst: args.dst, src: args.src, blend: args.blend, workbuf: args.workbuf, opts: args.opts)
@@ -357,6 +425,375 @@ pub func decoder.decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reader, 
             return "#truncated input"
         }
         yield? status
+    }
+}
+
+pri func decoder.do_decode_frame_vp8x?(dst: ptr base.pixel_buffer, src: base.io_reader, blend: base.pixel_blend, workbuf: slice base.u8, opts: nptr base.decode_frame_options) {
+    var c32            : base.u32
+    var chunk_length   : base.u32
+    var chunk_padding  : base.bool
+    var status         : base.status
+    var r_mark         : base.u64
+    var alpha_offset   : base.u64
+    var alph_length    : base.u32
+    var alph_header    : base.u8
+    var alph_comp      : base.u8
+    var alph_filter    : base.u8
+    var alpha_i        : base.u64
+    var alpha_n        : base.u64
+    var y              : base.u32
+    var x              : base.u32
+    var tab            : table base.u8
+    var row            : slice base.u8
+    var row_idx        : base.u64
+
+    if this.call_sequence == 0x40 {
+        // No-op.
+    } else if this.call_sequence < 0x40 {
+        this.do_decode_frame_config?(dst: nullptr, src: args.src)
+    } else {
+        return base."@end of data"
+    }
+
+    // Iterate sub-chunks to find ALPH and VP8/VP8L.
+    // The VP8 decoder's workbuf is used for Y/U/V planes. For VP8X with alpha,
+    // the alpha plane is stored after the V plane in the workbuf.
+    alpha_offset = this.vp8x_workbuf_len
+    if this.has_alpha {
+        alpha_offset ~mod-= (this.width as base.u64) * (this.height as base.u64)
+    }
+
+    while true {
+        c32 = args.src.read_u32le?()
+        chunk_length = args.src.read_u32le?()
+        chunk_padding = ((chunk_length & 1) <> 0)
+
+        if c32 == 'ALPH'le {
+            // Decode ALPH chunk.
+            if (chunk_length < 1) or (not this.has_alpha) {
+                args.src.skip_u32?(n: chunk_length)
+                if chunk_padding {
+                    args.src.skip_u32?(n: 1)
+                }
+                continue
+            }
+            // Read ALPH header byte.
+            alph_header = args.src.read_u8?()
+            alph_comp = alph_header & 0x03
+            alph_filter = (alph_header >> 2) & 0x03
+            alph_length = chunk_length ~sat- 1
+
+            if alph_comp == 0 {
+                // Uncompressed alpha: read raw bytes into workbuf alpha region.
+                alpha_n = (this.width as base.u64) * (this.height as base.u64)
+                alpha_i = 0
+                while alpha_i < alpha_n {
+                    if alph_length == 0 {
+                        break
+                    }
+                    if (alpha_offset ~mod+ alpha_i) < args.workbuf.length() {
+                        args.workbuf[alpha_offset ~mod+ alpha_i] = args.src.read_u8?()
+                    }
+                    alpha_i ~mod+= 1
+                    alph_length ~sat-= 1
+                }
+            } else {
+                // VP8L-compressed alpha: decode VP8L image, extract green channel.
+                // VP8L alpha within ALPH has no 0x2F signature or image descriptor.
+                // The VP8L bitstream starts directly with transform data.
+                // Set up VP8L transform offsets for workbuf.
+                this.workbuf_offset_for_transform[0] = 4 * this.width * this.height
+                this.workbuf_offset_for_transform[1] = this.workbuf_offset_for_transform[0] +
+                        (4 * ((this.width + 3) >> 2) * ((this.height + 3) >> 2))
+                this.workbuf_offset_for_transform[2] = this.workbuf_offset_for_transform[1] +
+                        (4 * ((this.width + 3) >> 2) * ((this.height + 3) >> 2))
+                this.workbuf_offset_for_transform[3] = this.workbuf_offset_for_transform[2] +
+                        (4 * ((this.width + 3) >> 2) * ((this.height + 3) >> 2))
+
+                // Decode VP8L pixels.
+                this.call_sequence = 0x40
+                while true {
+                    status =? this.do_decode_frame?(dst: args.dst, src: args.src, blend: args.blend, workbuf: args.workbuf, opts: args.opts)
+                    if status.is_ok() {
+                        break
+                    } else if not status.is_suspension() {
+                        return status
+                    }
+                    yield? status
+                }
+
+                // Extract green channel from decoded VP8L pixels in workbuf.
+                // VP8L pixels are BGRA at workbuf[0 .. 4*width*height].
+                // Green channel is at byte offset 1 in each 4-byte pixel.
+                alpha_n = (this.width as base.u64) * (this.height as base.u64)
+                alpha_i = 0
+                row_idx = 1  // Start at green channel of first pixel.
+                while alpha_i < alpha_n {
+                    if ((alpha_offset ~mod+ alpha_i) < args.workbuf.length()) and
+                            (row_idx < args.workbuf.length()) {
+                        args.workbuf[alpha_offset ~mod+ alpha_i] =
+                                args.workbuf[row_idx]
+                    }
+                    alpha_i ~mod+= 1
+                    row_idx ~mod+= 4
+                }
+
+                // Reset call_sequence for VP8 decode phase.
+                this.call_sequence = 0x40
+                alph_length = 0
+            }
+
+            // Apply alpha filter (reverse prediction).
+            if alph_filter == 1 {
+                // Horizontal: alpha[i] += alpha[i-1]
+                this.apply_alpha_filter_horizontal!(workbuf: args.workbuf, alpha_offset: alpha_offset)
+            } else if alph_filter == 2 {
+                // Vertical: alpha[i] += alpha[i-width]
+                this.apply_alpha_filter_vertical!(workbuf: args.workbuf, alpha_offset: alpha_offset)
+            } else if alph_filter == 3 {
+                // Gradient: alpha[i] += clamp(left + above - above_left)
+                this.apply_alpha_filter_gradient!(workbuf: args.workbuf, alpha_offset: alpha_offset)
+            }
+
+            // Skip remaining ALPH data + padding.
+            if alph_length > 0 {
+                args.src.skip_u32?(n: alph_length)
+            }
+            if chunk_padding {
+                args.src.skip_u32?(n: 1)
+            }
+
+        } else if (c32 == 'VP8 'le) or (c32 == 'VP8L'le) {
+            this.is_vp8_lossy = (c32 == 'VP8 'le)
+            this.sub_chunk_length = chunk_length
+            this.sub_chunk_has_padding = chunk_padding
+            break
+
+        } else {
+            // Skip unknown chunks (ICCP, EXIF, XMP, etc.).
+            args.src.skip_u32?(n: chunk_length)
+            if chunk_padding {
+                args.src.skip_u32?(n: 1)
+            }
+        }
+    }
+
+    if this.is_vp8_lossy {
+        // Call VP8 decode pipeline: image_config, frame_config, frame.
+        while true {
+            io_limit (io: args.src, limit: this.sub_chunk_length as base.u64) {
+                r_mark = args.src.mark()
+                status =? this.vp8.decode_image_config?(dst: nullptr, src: args.src)
+                this.sub_chunk_length ~sat-=
+                        (args.src.count_since(mark: r_mark) & 0xFFFF_FFFF) as base.u32
+            }
+            if status.is_ok() {
+                break
+            } else if not status.is_suspension() {
+                return status
+            }
+            yield? status
+        }
+
+        while true {
+            status =? this.vp8.decode_frame_config?(dst: nullptr, src: args.src)
+            if status.is_ok() {
+                break
+            } else if not status.is_suspension() {
+                return status
+            }
+            yield? status
+        }
+
+        while true {
+            status =? this.vp8.decode_frame?(dst: args.dst, src: args.src, blend: args.blend, workbuf: args.workbuf, opts: args.opts)
+            if status.is_ok() {
+                break
+            } else if not status.is_suspension() {
+                return status
+            }
+            yield? status
+        }
+    } else {
+        // VP8L inside VP8X: use the existing VP8L decode path.
+        // TODO: implement VP8L inside VP8X.
+        return "#unsupported WebP file"
+    }
+
+    // Apply alpha channel to the decoded pixel buffer.
+    if this.has_alpha {
+        tab = args.dst.plane(p: 0)
+        y = 0
+        while y < this.height {
+            row = tab.row_u32(y: y)
+            x = 0
+            while x < this.width,
+                    inv y < this.height,
+            {
+                // BGRA pixel layout: [B, G, R, A] at offset x*4.
+                // Set the alpha byte (offset 3) from the decoded alpha plane.
+                row_idx = ((x as base.u64) * 4) + 3
+                alpha_i = (alpha_offset ~mod+ ((y as base.u64) * (this.width as base.u64))) ~mod+ (x as base.u64)
+                if (row_idx < row.length()) and (alpha_i < args.workbuf.length()) {
+                    row[row_idx] = args.workbuf[alpha_i]
+                }
+                x ~mod+= 1
+            }
+            y ~mod+= 1
+        }
+    }
+
+    this.call_sequence = 0x60
+}
+
+pri func decoder.apply_alpha_filter_horizontal!(workbuf: slice base.u8, alpha_offset: base.u64) {
+    var y : base.u32
+    var x : base.u32
+    var i : base.u64
+    var prev : base.u8
+
+    y = 0
+    while y < this.height {
+        // For rows after the first, initialize prev with the first pixel of the
+        // previous row's output (matching libwebp's ALPHFilterRestoreH behavior).
+        prev = 0
+        if y > 0 {
+            i = args.alpha_offset ~mod+ (((y ~mod- 1) as base.u64) * (this.width as base.u64))
+            if i < args.workbuf.length() {
+                prev = args.workbuf[i]
+            }
+        }
+        x = 0
+        while x < this.width,
+                inv y < this.height,
+        {
+            i = (args.alpha_offset ~mod+ ((y as base.u64) * (this.width as base.u64))) ~mod+ (x as base.u64)
+            if i < args.workbuf.length() {
+                args.workbuf[i] = (args.workbuf[i] ~mod+ prev) as base.u8
+                prev = args.workbuf[i]
+            }
+            x ~mod+= 1
+        }
+        y ~mod+= 1
+    }
+}
+
+pri func decoder.apply_alpha_filter_vertical!(workbuf: slice base.u8, alpha_offset: base.u64) {
+    var y    : base.u32
+    var x    : base.u32
+    var i    : base.u64
+    var prev : base.u8
+
+    // Row 0: apply horizontal unfilter (matching libwebp's VerticalUnfilter
+    // which delegates to HorizontalUnfilter when prev_row is NULL).
+    prev = 0
+    x = 0
+    while x < this.width {
+        i = args.alpha_offset ~mod+ (x as base.u64)
+        if i < args.workbuf.length() {
+            args.workbuf[i] = (args.workbuf[i] ~mod+ prev) as base.u8
+            prev = args.workbuf[i]
+        }
+        x ~mod+= 1
+    }
+
+    // Rows 1+: apply vertical unfilter (add pixel from above row).
+    y = 1
+    while y < this.height {
+        x = 0
+        while x < this.width,
+                inv y < this.height,
+        {
+            i = (args.alpha_offset ~mod+ (((y ~mod- 1) as base.u64) * (this.width as base.u64))) ~mod+ (x as base.u64)
+            prev = 0
+            if i < args.workbuf.length() {
+                prev = args.workbuf[i]
+            }
+            i = (args.alpha_offset ~mod+ ((y as base.u64) * (this.width as base.u64))) ~mod+ (x as base.u64)
+            if i < args.workbuf.length() {
+                args.workbuf[i] = (args.workbuf[i] ~mod+ prev) as base.u8
+            }
+            x ~mod+= 1
+        }
+        y ~mod+= 1
+    }
+}
+
+pri func decoder.apply_alpha_filter_gradient!(workbuf: slice base.u8, alpha_offset: base.u64) {
+    var y     : base.u32
+    var x     : base.u32
+    var i     : base.u64
+    var prev  : base.u8
+    var left  : base.u32
+    var above : base.u32
+    var tl    : base.u32
+    var pred  : base.u32
+
+    // Row 0: apply horizontal unfilter (matching libwebp's GradientUnfilter
+    // which delegates to HorizontalUnfilter when prev_row is NULL).
+    prev = 0
+    x = 0
+    while x < this.width {
+        i = args.alpha_offset ~mod+ (x as base.u64)
+        if i < args.workbuf.length() {
+            args.workbuf[i] = (args.workbuf[i] ~mod+ prev) as base.u8
+            prev = args.workbuf[i]
+        }
+        x ~mod+= 1
+    }
+
+    // Rows 1+: apply gradient unfilter.
+    y = 1
+    while y < this.height {
+        // First pixel of each row: pred = above (left=0, tl=0, so grad=above).
+        i = (args.alpha_offset ~mod+ (((y ~mod- 1) as base.u64) * (this.width as base.u64)))
+        above = 0
+        if i < args.workbuf.length() {
+            above = args.workbuf[i] as base.u32
+        }
+        i = (args.alpha_offset ~mod+ ((y as base.u64) * (this.width as base.u64)))
+        if i < args.workbuf.length() {
+            args.workbuf[i] = (((args.workbuf[i] as base.u32) ~mod+ above) & 0xFF) as base.u8
+        }
+
+        x = 1
+        while x < this.width,
+                inv y < this.height,
+        {
+            // left = output[y][x-1]
+            left = 0
+            i = (args.alpha_offset ~mod+ ((y as base.u64) * (this.width as base.u64))) ~mod+ ((x ~mod- 1) as base.u64)
+            if i < args.workbuf.length() {
+                left = args.workbuf[i] as base.u32
+            }
+            // above = output[y-1][x]
+            above = 0
+            i = (args.alpha_offset ~mod+ (((y ~mod- 1) as base.u64) * (this.width as base.u64))) ~mod+ (x as base.u64)
+            if i < args.workbuf.length() {
+                above = args.workbuf[i] as base.u32
+            }
+            // tl = output[y-1][x-1]
+            tl = 0
+            i = (args.alpha_offset ~mod+ (((y ~mod- 1) as base.u64) * (this.width as base.u64))) ~mod+ ((x ~mod- 1) as base.u64)
+            if i < args.workbuf.length() {
+                tl = args.workbuf[i] as base.u32
+            }
+            // clamp(left + above - tl, 0, 255)
+            pred = (left ~mod+ above) ~mod- tl
+            if pred > 255 {
+                if (left ~mod+ above) < tl {
+                    pred = 0
+                } else {
+                    pred = 255
+                }
+            }
+            i = (args.alpha_offset ~mod+ ((y as base.u64) * (this.width as base.u64))) ~mod+ (x as base.u64)
+            if i < args.workbuf.length() {
+                args.workbuf[i] = (((args.workbuf[i] as base.u32) ~mod+ pred) & 0xFF) as base.u8
+            }
+            x ~mod+= 1
+        }
+        y ~mod+= 1
     }
 }
 
@@ -888,6 +1325,11 @@ pub func decoder.tell_me_more?(dst: base.io_writer, minfo: nptr base.more_inform
 }
 
 pub func decoder.workbuf_len() base.range_ii_u64 {
+    if this.is_vp8x {
+        return this.util.make_range_ii_u64(
+                min_incl: this.vp8x_workbuf_len,
+                max_incl: this.vp8x_workbuf_len)
+    }
     if this.is_vp8_lossy {
         return this.vp8.workbuf_len()
     }

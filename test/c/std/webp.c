@@ -88,30 +88,157 @@ wuffs_webp_decode(uint64_t* n_bytes_out,
 // --------
 
 const char*  //
-test_wuffs_webp_decode_interface_lossless() {
-  CHECK_FOCUS(__func__);
+wuffs_webp_decode_interface(const char* filename,
+                            uint32_t width,
+                            uint32_t height,
+                            uint32_t want_hash) {
   wuffs_webp__decoder* dec = &g_webp_decoder;
   CHECK_STATUS("initialize",
                wuffs_webp__decoder__initialize(
                    dec, sizeof *dec, WUFFS_VERSION,
                    WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED));
   return do_test__wuffs_base__image_decoder(
-      wuffs_webp__decoder__upcast_as__wuffs_base__image_decoder(dec),
-      "test/data/bricks-color.lossless.webp", 0, SIZE_MAX, 160, 120,
-      0xFF022460);
+      wuffs_webp__decoder__upcast_as__wuffs_base__image_decoder(dec), filename,
+      0, SIZE_MAX, width, height, want_hash);
+}
+
+// --------  Lossless (VP8L) tests
+
+const char*  //
+test_wuffs_webp_decode_interface_lossless_bricks_color() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/bricks-color.lossless.webp", 160, 120, 0xFF022460);
 }
 
 const char*  //
-test_wuffs_webp_decode_interface_lossy() {
+test_wuffs_webp_decode_interface_lossless_bricks_dither() {
   CHECK_FOCUS(__func__);
-  wuffs_webp__decoder* dec = &g_webp_decoder;
-  CHECK_STATUS("initialize",
-               wuffs_webp__decoder__initialize(
-                   dec, sizeof *dec, WUFFS_VERSION,
-                   WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED));
-  return do_test__wuffs_base__image_decoder(
-      wuffs_webp__decoder__upcast_as__wuffs_base__image_decoder(dec),
-      "test/data/bricks-color.lossy.webp", 0, SIZE_MAX, 160, 120, 0xFF9F7780);
+  return wuffs_webp_decode_interface(
+      "test/data/bricks-dither.lossless.webp", 160, 120, 0xFF012463);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossless_bricks_gray() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/bricks-gray.lossless.webp", 160, 120, 0xFF060606);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossless_bricks_nodither() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/bricks-nodither.lossless.webp", 160, 120, 0xFF012463);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossless_harvesters() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/harvesters.lossless.webp", 1165, 859, 0xFF0D010B);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossless_hat() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/hat.lossless.webp", 90, 112, 0xFF000000);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossless_hibiscus_primitive() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/hibiscus.primitive.lossless.webp", 312, 442, 0xFF7A754D);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossless_hibiscus_regular() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/hibiscus.regular.lossless.webp", 312, 442, 0xFF000000);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossless_hippopotamus() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/hippopotamus.lossless.webp", 36, 28, 0xFFF5F5F5);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossless_pjw_thumbnail() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/pjw-thumbnail.lossless.webp", 32, 32, 0xFFFFFFFF);
+}
+
+// --------  Lossy (VP8) tests
+
+const char*  //
+test_wuffs_webp_decode_interface_lossy_bricks_color() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/bricks-color.lossy.webp", 160, 120, 0xFF123168);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossy_bricks_gray() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/bricks-gray.lossy.webp", 160, 120, 0xFF161616);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossy_harvesters() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/harvesters.lossy.webp", 1165, 859, 0xFF121116);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossy_hat() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/hat.lossy.webp", 90, 112, 0xFF150F03);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossy_hibiscus_primitive() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/hibiscus.primitive.lossy.webp", 312, 442, 0xFF787457);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossy_hibiscus_regular() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/hibiscus.regular.lossy.webp", 312, 442, 0xFF101010);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossy_hippopotamus() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/hippopotamus.lossy.webp", 36, 28, 0xFFE1E1E3);
+}
+
+const char*  //
+test_wuffs_webp_decode_interface_lossy_pjw_thumbnail() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/pjw-thumbnail.lossy.webp", 32, 32, 0xFFEBEBEB);
+}
+
+// --------  Lossy with alpha (VP8X) tests
+
+const char*  //
+test_wuffs_webp_decode_interface_lossy_with_alpha_bricks_color() {
+  CHECK_FOCUS(__func__);
+  return wuffs_webp_decode_interface(
+      "test/data/bricks-color.lossy-with-alpha.webp", 16, 16, 0x64487DED);
 }
 
 // ---------------- Mimic Tests
@@ -293,8 +420,30 @@ bench_mimic_webp_lossless_decode_image_4002k_24bpp() {
 
 proc g_tests[] = {
 
-    test_wuffs_webp_decode_interface_lossless,
-    test_wuffs_webp_decode_interface_lossy,
+    // Lossless (VP8L)
+    test_wuffs_webp_decode_interface_lossless_bricks_color,
+    test_wuffs_webp_decode_interface_lossless_bricks_dither,
+    test_wuffs_webp_decode_interface_lossless_bricks_gray,
+    test_wuffs_webp_decode_interface_lossless_bricks_nodither,
+    test_wuffs_webp_decode_interface_lossless_harvesters,
+    test_wuffs_webp_decode_interface_lossless_hat,
+    test_wuffs_webp_decode_interface_lossless_hibiscus_primitive,
+    test_wuffs_webp_decode_interface_lossless_hibiscus_regular,
+    test_wuffs_webp_decode_interface_lossless_hippopotamus,
+    test_wuffs_webp_decode_interface_lossless_pjw_thumbnail,
+
+    // Lossy (VP8)
+    test_wuffs_webp_decode_interface_lossy_bricks_color,
+    test_wuffs_webp_decode_interface_lossy_bricks_gray,
+    test_wuffs_webp_decode_interface_lossy_harvesters,
+    test_wuffs_webp_decode_interface_lossy_hat,
+    test_wuffs_webp_decode_interface_lossy_hibiscus_primitive,
+    test_wuffs_webp_decode_interface_lossy_hibiscus_regular,
+    test_wuffs_webp_decode_interface_lossy_hippopotamus,
+    test_wuffs_webp_decode_interface_lossy_pjw_thumbnail,
+
+    // Lossy with alpha (VP8X)
+    test_wuffs_webp_decode_interface_lossy_with_alpha_bricks_color,
 
 #ifdef WUFFS_MIMIC
 

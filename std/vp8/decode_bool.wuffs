@@ -1,0 +1,230 @@
+// Copyright 2024 The Wuffs Authors.
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+//
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
+// VP8 boolean (arithmetic) decoder per RFC 6386 Section 7.
+//
+// State:
+//   bool_range: [1, 255], the current interval width
+//   bool_value: the current coded value (scaled by bits_left)
+//   bool_count: number of remaining bit shifts before a new byte is needed
+//
+// The boolean decoder reads from data previously buffered into
+// this.bool_buffer[this.bool_ri .. this.bool_wi].
+
+// bool_init! initializes the boolean decoder state from the first two bytes
+// in the buffer.
+pri func decoder.bool_init!() {
+    var b0 : base.u32
+    var b1 : base.u32
+
+    this.bool_range = 255
+    this.bool_value = 0
+    this.bool_count = 0
+
+    if (this.bool_ri < 0xFFF) and ((this.bool_ri + 1) < this.bool_wi) {
+        b0 = this.bool_buffer[this.bool_ri] as base.u32
+        b1 = this.bool_buffer[this.bool_ri + 1] as base.u32
+        this.bool_value = (b0 << 8) | b1
+        this.bool_ri += 2
+        this.bool_count = 7
+    }
+}
+
+// bool_read_bool! reads a single boolean with the given probability (0..255).
+// Returns 0 or 1.
+//
+// Implementation follows RFC 6386 Section 7.3 / Go x/image/vp8.
+pri func decoder.bool_read_bool!(prob: base.u8) base.u32[..= 1] {
+    var split   : base.u32
+    var retval  : base.u32[..= 1]
+    var bb      : base.u32
+
+    // split = 1 + (((range-1) * prob) >> 8)
+    split = 1 + ((((this.bool_range ~mod- 1) & 0xFF) * (args.prob as base.u32)) >> 8)
+
+    // Compare value against split shifted into position.
+    if this.bool_value >= (split ~mod<< 8) {
+        retval = 1
+        this.bool_value ~mod-= (split ~mod<< 8)
+        this.bool_range ~mod-= split
+    } else {
+        retval = 0
+        this.bool_range = split
+    }
+
+    // Renormalize: shift range/value left until range >= 128.
+    while (this.bool_range & 0xFF) < 128 {
+        this.bool_range = (this.bool_range ~mod<< 1) & 0xFF
+        this.bool_value = this.bool_value ~mod<< 1
+
+        if this.bool_count == 0 {
+            // Feed a new byte.
+            if (this.bool_ri < this.bool_wi) and (this.bool_ri < 0x1000) {
+                bb = this.bool_buffer[this.bool_ri] as base.u32
+                this.bool_ri += 1
+            } else {
+                bb = 0
+            }
+            this.bool_value |= bb
+            this.bool_count = 7
+        } else {
+            this.bool_count ~sat-= 1
+        }
+    }
+
+    return retval
+}
+
+// bool_read_literal! reads n bits at probability 128 (uniform).
+pri func decoder.bool_read_literal!(n: base.u32[..= 24]) base.u32 {
+    var result : base.u32
+    var i      : base.u32
+    var bit    : base.u32[..= 1]
+
+    result = 0
+    i = 0
+    while i < args.n,
+            inv i <= 24,
+    {
+        assert i < 24 via "a < b: a < c; c <= b"(c: args.n)
+        bit = this.bool_read_bool!(prob: 128)
+        result = (result ~mod<< 1) | bit
+        i += 1
+    }
+    return result
+}
+
+// bool_read_signed! reads an optional signed value. First reads a flag bit;
+// if 1, reads n bits of magnitude + sign bit.
+pri func decoder.bool_read_signed!(n: base.u32[..= 24]) base.i32 {
+    var flag      : base.u32[..= 1]
+    var magnitude : base.u32
+    var sign      : base.u32[..= 1]
+
+    flag = this.bool_read_bool!(prob: 128)
+    if flag == 0 {
+        return 0
+    }
+
+    magnitude = this.bool_read_literal!(n: args.n)
+    magnitude &= 0x7FFF_FFFF
+    sign = this.bool_read_bool!(prob: 128)
+    if sign <> 0 {
+        return -(magnitude as base.i32)
+    }
+    return magnitude as base.i32
+}
+
+// ---- Partition 1 (coefficient data) boolean decoder ----
+
+// p1_init! initializes the partition 1 boolean decoder.
+pri func decoder.p1_init!() {
+    var b0 : base.u32
+    var b1 : base.u32
+
+    this.p1_range = 255
+    this.p1_value = 0
+    this.p1_count = 0
+
+    if (this.p1_ri < 0xFFF) and ((this.p1_ri + 1) < this.p1_wi) {
+        b0 = this.p1_buffer[this.p1_ri] as base.u32
+        b1 = this.p1_buffer[this.p1_ri + 1] as base.u32
+        this.p1_value = (b0 << 8) | b1
+        this.p1_ri += 2
+        this.p1_count = 7
+    }
+}
+
+// p1_read_bool! reads a boolean from partition 1.
+pri func decoder.p1_read_bool!(prob: base.u8) base.u32[..= 1] {
+    var split   : base.u32
+    var retval  : base.u32[..= 1]
+    var bb      : base.u32
+
+    split = 1 + ((((this.p1_range ~mod- 1) & 0xFF) * (args.prob as base.u32)) >> 8)
+
+    if this.p1_value >= (split ~mod<< 8) {
+        retval = 1
+        this.p1_value ~mod-= (split ~mod<< 8)
+        this.p1_range ~mod-= split
+    } else {
+        retval = 0
+        this.p1_range = split
+    }
+
+    while (this.p1_range & 0xFF) < 128 {
+        this.p1_range = (this.p1_range ~mod<< 1) & 0xFF
+        this.p1_value = this.p1_value ~mod<< 1
+
+        if this.p1_count == 0 {
+            if (this.p1_ri < this.p1_wi) and (this.p1_ri < 0x1000) {
+                bb = this.p1_buffer[this.p1_ri] as base.u32
+                this.p1_ri += 1
+            } else {
+                bb = 0
+            }
+            this.p1_value |= bb
+            this.p1_count = 7
+        } else {
+            this.p1_count ~sat-= 1
+        }
+    }
+
+    return retval
+}
+
+// p1_fill_buffer! reads data from src into the partition 1 buffer.
+pri func decoder.p1_fill_buffer!(src: base.io_reader, n: base.u32) {
+    var remaining : base.u32
+    var c8        : base.u8
+
+    if (this.p1_ri > 0) and (this.p1_ri <= this.p1_wi) {
+        this.p1_buffer[.. 0x1000].copy_from_slice!(s: this.p1_buffer[this.p1_ri .. this.p1_wi])
+        this.p1_wi ~sat-= this.p1_ri
+        this.p1_ri = 0
+    }
+
+    remaining = args.n
+    while (remaining > 0) and (this.p1_wi < 0x1000) and (args.src.length() > 0) {
+        c8 = args.src.peek_u8()
+        args.src.skip_u32_fast!(actual: 1, worst_case: 1)
+        if this.p1_wi < 0x1000 {
+            this.p1_buffer[this.p1_wi] = c8
+            this.p1_wi += 1
+        }
+        remaining -= 1
+    }
+}
+
+// ---- Partition 0 (mode data) boolean decoder ----
+
+// bool_fill_from_workbuf! refills the boolean decoder buffer from the
+// partition 0 data stored in workbuf (starting at workbuf_offset_v_end).
+pri func decoder.bool_fill_from_workbuf!(workbuf: slice base.u8) {
+    var idx : base.u64
+
+    // Compact the buffer first.
+    if (this.bool_ri > 0) and (this.bool_ri <= this.bool_wi) {
+        this.bool_buffer[.. 0x1000].copy_from_slice!(s: this.bool_buffer[this.bool_ri .. this.bool_wi])
+        this.bool_wi ~sat-= this.bool_ri
+        this.bool_ri = 0
+    }
+
+    // Fill from workbuf partition 0 data.
+    while this.bool_wi < 0x1000 {
+        idx = this.workbuf_offset_v_end ~mod+ (this.p0_wbuf_ri as base.u64)
+        if idx >= args.workbuf.length() {
+            break
+        }
+        this.bool_buffer[this.bool_wi] = args.workbuf[idx]
+        this.bool_wi += 1
+        this.p0_wbuf_ri ~mod+= 1
+    }
+}
