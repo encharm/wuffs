@@ -19,27 +19,24 @@
 // arithmetic (sign-preserving), not logical. Wuffs's >> on base.u32 is
 // logical, so we use asr16/asr3 helpers for arithmetic right shift.
 
-// asr16! performs arithmetic right shift by 16 on a u32 value representing
-// a signed 32-bit quantity. Preserves the sign bit.
+// asr16! performs branchless arithmetic right shift by 16 on a u32 value
+// representing a signed 32-bit quantity. Preserves the sign bit.
 pri func decoder.asr16!(v: base.u32) base.u32 {
-    if (args.v & 0x8000_0000) <> 0 {
-        return (args.v >> 16) | 0xFFFF_0000
-    }
-    return args.v >> 16
+    // sign = 0 or 1; (0 ~mod- sign) = 0x00000000 or 0xFFFFFFFF
+    return (args.v >> 16) | ((0 ~mod- (args.v >> 31)) ~mod<< 16)
 }
 
-// asr3! performs arithmetic right shift by 3 on a u32 value representing
-// a signed 32-bit quantity. Preserves the sign bit.
+// asr3! performs branchless arithmetic right shift by 3 on a u32 value
+// representing a signed 32-bit quantity. Preserves the sign bit.
 pri func decoder.asr3!(v: base.u32) base.u32 {
-    if (args.v & 0x8000_0000) <> 0 {
-        return (args.v >> 3) | 0xE000_0000
-    }
-    return args.v >> 3
+    return (args.v >> 3) | ((0 ~mod- (args.v >> 31)) ~mod<< 29)
 }
 
 // idct_add! performs a 4x4 inverse DCT and adds the result to the prediction
 // block in the workbuf. The 16 input coefficients start at mb_coeffs[coeff_offset].
-pri func decoder.idct_add!(dst: slice base.u8, stride: base.u32, coeff_offset: base.u32[..= 384]) {
+pri func decoder.idct_add!(dst: slice base.u8, stride: base.u32, coeff_offset: base.u32[..= 384]),
+        choosy,
+{
     var in0  : base.u32
     var in1  : base.u32
     var in2  : base.u32
@@ -187,7 +184,9 @@ pri func decoder.idct_add!(dst: slice base.u8, stride: base.u32, coeff_offset: b
 
 // idct_dc_add! performs a simplified IDCT when only the DC coefficient is
 // non-zero. Adds asr3(dc + 4) to each of the 16 prediction pixels.
-pri func decoder.idct_dc_add!(dst: slice base.u8, stride: base.u32, coeff_offset: base.u32[..= 384]) {
+pri func decoder.idct_dc_add!(dst: slice base.u8, stride: base.u32, coeff_offset: base.u32[..= 384]),
+        choosy,
+{
     var dc   : base.u32
     var row  : base.u32
     var idx  : base.u64

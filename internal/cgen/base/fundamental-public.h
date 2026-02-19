@@ -1077,6 +1077,38 @@ wuffs_base__count_leading_zeroes_u64(uint64_t u) {
 
 #endif  // (defined(__GNUC__) || defined(__clang__)) && (__SIZEOF_LONG__ == 8)
 
+static inline uint32_t  //
+wuffs_base__count_leading_zeroes_u32(uint32_t u) {
+#if defined(__GNUC__) || defined(__clang__)
+  return u ? ((uint32_t)(__builtin_clz(u))) : 32u;
+#else
+  if (u == 0) {
+    return 32;
+  }
+  uint32_t n = 0;
+  if ((u >> 16) == 0) {
+    n |= 16;
+    u <<= 16;
+  }
+  if ((u >> 24) == 0) {
+    n |= 8;
+    u <<= 8;
+  }
+  if ((u >> 28) == 0) {
+    n |= 4;
+    u <<= 4;
+  }
+  if ((u >> 30) == 0) {
+    n |= 2;
+    u <<= 2;
+  }
+  if ((u >> 31) == 0) {
+    n |= 1;
+  }
+  return n;
+#endif
+}
+
 // --------
 
 // Normally, the wuffs_base__peek_etc and wuffs_base__poke_etc implementations

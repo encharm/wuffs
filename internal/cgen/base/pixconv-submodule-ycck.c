@@ -49,6 +49,28 @@ wuffs_private_impl__swizzle_ycc__upsample_inv_h2v2_triangle_x86_avx2(
 #endif
 #endif  // defined(WUFFS_PRIVATE_IMPL__CPU_ARCH__X86_64_V3)
 
+#if defined(WUFFS_PRIVATE_IMPL__CPU_ARCH__ARM_NEON)
+static void  //
+wuffs_private_impl__swizzle_ycc__convert_3_bgrx_arm_neon(
+    wuffs_base__pixel_buffer* dst,
+    uint32_t x,
+    uint32_t x_end,
+    uint32_t y,
+    const uint8_t* up0,
+    const uint8_t* up1,
+    const uint8_t* up2);
+
+static void  //
+wuffs_private_impl__swizzle_ycc__convert_3_rgbx_arm_neon(
+    wuffs_base__pixel_buffer* dst,
+    uint32_t x,
+    uint32_t x_end,
+    uint32_t y,
+    const uint8_t* up0,
+    const uint8_t* up1,
+    const uint8_t* up2);
+#endif  // defined(WUFFS_PRIVATE_IMPL__CPU_ARCH__ARM_NEON)
+
 // --------
 
 static inline uint32_t  //
@@ -1449,6 +1471,10 @@ wuffs_base__pixel_swizzler__swizzle_ycck(
           break;
         }
 #endif
+#if defined(WUFFS_PRIVATE_IMPL__CPU_ARCH__ARM_NEON)
+        conv3func = &wuffs_private_impl__swizzle_ycc__convert_3_bgrx_arm_neon;
+        break;
+#endif
         conv3func = &wuffs_private_impl__swizzle_ycc__convert_3_bgrx;
         break;
       case WUFFS_BASE__PIXEL_FORMAT__RGBA_NONPREMUL:
@@ -1459,6 +1485,10 @@ wuffs_base__pixel_swizzler__swizzle_ycck(
           conv3func = &wuffs_private_impl__swizzle_ycc__convert_3_rgbx_x86_avx2;
           break;
         }
+#endif
+#if defined(WUFFS_PRIVATE_IMPL__CPU_ARCH__ARM_NEON)
+        conv3func = &wuffs_private_impl__swizzle_ycc__convert_3_rgbx_arm_neon;
+        break;
 #endif
         conv3func = &wuffs_private_impl__swizzle_ycc__convert_3_rgbx;
         break;

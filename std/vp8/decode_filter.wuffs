@@ -25,7 +25,19 @@
 // apply_simple_filter_all! applies the simple loop filter (filter_type=1).
 // Only processes the Y plane.
 pri func decoder.apply_simple_filter_all!(workbuf: slice base.u8) {
-    var mby      : base.u32
+    var mby : base.u32
+
+    mby = 0
+    while mby < this.mb_height {
+        this.apply_simple_filter_row!(workbuf: args.workbuf, mby: mby)
+        if mby < 0x3FF {
+            mby += 1
+        }
+    }
+}
+
+// apply_simple_filter_row! applies the simple loop filter to a single MB row.
+pri func decoder.apply_simple_filter_row!(workbuf: slice base.u8, mby: base.u32) {
     var mbx      : base.u32
     var mb_idx   : base.u32
     var f_level  : base.u32
@@ -36,92 +48,243 @@ pri func decoder.apply_simple_filter_all!(workbuf: slice base.u8) {
     var r        : base.u32
     var idx      : base.u64
 
-    mby = 0
-    while mby < this.mb_height {
-        mbx = 0
-        while mbx < this.mb_width {
-            mb_idx = (mby ~mod* this.mb_width) ~mod+ mbx
-            if mb_idx >= 0x10_0000 {
-                mbx ~mod+= 1
-                continue
-            }
+    mbx = 0
+    while mbx < this.mb_width {
+        mb_idx = ((args.mby & 1) * 0x400) ~mod+ mbx
+        if mb_idx >= 0x800 {
+            mbx ~mod+= 1
+            continue
+        }
 
-            f_level = this.mb_filter_level[mb_idx] as base.u32
-            if f_level == 0 {
-                mbx ~mod+= 1
-                continue
-            }
+        f_level = this.mb_filter_level[mb_idx] as base.u32
+        if f_level == 0 {
+            mbx ~mod+= 1
+            continue
+        }
 
-            has_inner = this.mb_filter_inner[mb_idx] <> 0
+        has_inner = this.mb_filter_inner[mb_idx] <> 0
 
-            // mb_filter_level already stores 2*base_level + ilevel.
-            // MB edge = level + 4, sub-block edge = level.
-            sub_lim = f_level
-            mb_lim = sub_lim ~mod+ 4
+        sub_lim = f_level
+        mb_lim = sub_lim ~mod+ 4
 
-            // Y plane base offset for this macroblock.
-            y_off = ((mby as base.u64) * 16 * (this.y_stride as base.u64)) +
-                    ((mbx as base.u64) * 16)
+        y_off = ((args.mby as base.u64) * 16 * (this.y_stride as base.u64)) +
+                ((mbx as base.u64) * 16)
 
-            // Filter left vertical MB edge (if not first column).
-            if mbx > 0 {
-                r = 0
-                while r < 16 {
-                    idx = y_off ~mod+ ((r as base.u64) * (this.y_stride as base.u64))
-                    this.filter2!(workbuf: args.workbuf,
-                            q0_idx: idx, step: 1, limit: mb_lim)
-                    r += 1
-                }
-            }
-
-            // Filter inner vertical sub-block edges at x+4, x+8, x+12.
-            if has_inner {
-                r = 0
-                while r < 16 {
-                    idx = y_off ~mod+ ((r as base.u64) * (this.y_stride as base.u64))
-                    this.filter2!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ 4, step: 1, limit: sub_lim)
-                    this.filter2!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ 8, step: 1, limit: sub_lim)
-                    this.filter2!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ 12, step: 1, limit: sub_lim)
-                    r += 1
-                }
-            }
-
-            // Filter top horizontal MB edge (if not first row).
-            if mby > 0 {
-                r = 0
-                while r < 16 {
-                    idx = y_off ~mod+ (r as base.u64)
-                    this.filter2!(workbuf: args.workbuf,
-                            q0_idx: idx, step: this.y_stride as base.u64, limit: mb_lim)
-                    r += 1
-                }
-            }
-
-            // Filter inner horizontal sub-block edges at y+4, y+8, y+12.
-            if has_inner {
-                r = 0
-                while r < 16 {
-                    idx = y_off ~mod+ (r as base.u64)
-                    this.filter2!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ (4 * (this.y_stride as base.u64)), step: this.y_stride as base.u64, limit: sub_lim)
-                    this.filter2!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ (8 * (this.y_stride as base.u64)), step: this.y_stride as base.u64, limit: sub_lim)
-                    this.filter2!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ (12 * (this.y_stride as base.u64)), step: this.y_stride as base.u64, limit: sub_lim)
-                    r += 1
-                }
-            }
-
-            if mbx < 0x3FF {
-                mbx += 1
+        if mbx > 0 {
+            r = 0
+            while r < 16 {
+                idx = y_off ~mod+ ((r as base.u64) * (this.y_stride as base.u64))
+                this.filter2!(workbuf: args.workbuf,
+                        q0_idx: idx, step: 1, limit: mb_lim)
+                r += 1
             }
         }
-        if mby < 0x3FF {
-            mby += 1
+
+        if has_inner {
+            r = 0
+            while r < 16 {
+                idx = y_off ~mod+ ((r as base.u64) * (this.y_stride as base.u64))
+                this.filter2!(workbuf: args.workbuf,
+                        q0_idx: idx ~mod+ 4, step: 1, limit: sub_lim)
+                this.filter2!(workbuf: args.workbuf,
+                        q0_idx: idx ~mod+ 8, step: 1, limit: sub_lim)
+                this.filter2!(workbuf: args.workbuf,
+                        q0_idx: idx ~mod+ 12, step: 1, limit: sub_lim)
+                r += 1
+            }
         }
+
+        if args.mby > 0 {
+            this.simple_vfilter_16!(workbuf: args.workbuf,
+                    q0_off: y_off, limit: mb_lim)
+        }
+
+        if has_inner {
+            this.simple_vfilter_16!(workbuf: args.workbuf,
+                    q0_off: y_off ~mod+ (4 * (this.y_stride as base.u64)), limit: sub_lim)
+            this.simple_vfilter_16!(workbuf: args.workbuf,
+                    q0_off: y_off ~mod+ (8 * (this.y_stride as base.u64)), limit: sub_lim)
+            this.simple_vfilter_16!(workbuf: args.workbuf,
+                    q0_off: y_off ~mod+ (12 * (this.y_stride as base.u64)), limit: sub_lim)
+        }
+
+        if mbx < 0x3FF {
+            mbx += 1
+        }
+    }
+}
+
+// simple_vfilter_16! filters 16 contiguous pixels at a horizontal edge.
+// q0_off is the offset of the first q0 pixel (the first pixel below the edge).
+// Stride is this.y_stride. Processes pixels q0_off[0..16], with p0 at -stride,
+// p1 at -2*stride, q1 at +stride.
+pri func decoder.simple_vfilter_16!(workbuf: slice base.u8, q0_off: base.u64, limit: base.u32),
+        choosy,
+{
+    var r : base.u32
+
+    r = 0
+    while r < 16 {
+        this.filter2!(workbuf: args.workbuf,
+                q0_idx: args.q0_off ~mod+ (r as base.u64),
+                step: this.y_stride as base.u64,
+                limit: args.limit)
+        r += 1
+    }
+}
+
+// normal_vfilter_inner_16! filters 16 contiguous pixels at a horizontal edge
+// using the normal filter4 (inner sub-block edges, four_not_six=true).
+// q0_off is the offset of the first q0 pixel, stride is y_stride.
+pri func decoder.normal_vfilter_inner_16!(workbuf: slice base.u8, q0_off: base.u64,
+        level: base.u32, ilevel: base.u32, hlevel: base.u32),
+        choosy,
+{
+    var r : base.u32
+
+    r = 0
+    while r < 16 {
+        this.filter246!(workbuf: args.workbuf,
+                q0_idx: args.q0_off ~mod+ (r as base.u64),
+                step: this.y_stride as base.u64,
+                level: args.level, ilevel: args.ilevel, hlevel: args.hlevel,
+                four_not_six: true)
+        r += 1
+    }
+}
+
+// normal_vfilter_mb_16! filters 16 contiguous pixels at a horizontal edge
+// using the normal filter6 (MB boundary edges, four_not_six=false).
+pri func decoder.normal_vfilter_mb_16!(workbuf: slice base.u8, q0_off: base.u64,
+        level: base.u32, ilevel: base.u32, hlevel: base.u32),
+        choosy,
+{
+    var r : base.u32
+
+    r = 0
+    while r < 16 {
+        this.filter246!(workbuf: args.workbuf,
+                q0_idx: args.q0_off ~mod+ (r as base.u64),
+                step: this.y_stride as base.u64,
+                level: args.level, ilevel: args.ilevel, hlevel: args.hlevel,
+                four_not_six: false)
+        r += 1
+    }
+}
+
+// normal_vfilter_mb_8! filters 8 contiguous pixels at a horizontal edge
+// using the normal filter6 (MB boundary edges, four_not_six=false).
+// Used for U/V planes where the edge is 8 pixels wide.
+pri func decoder.normal_vfilter_mb_8!(workbuf: slice base.u8, q0_off: base.u64,
+        level: base.u32, ilevel: base.u32, hlevel: base.u32),
+        choosy,
+{
+    var r : base.u32
+
+    r = 0
+    while r < 8 {
+        this.filter246!(workbuf: args.workbuf,
+                q0_idx: args.q0_off ~mod+ (r as base.u64),
+                step: this.uv_stride as base.u64,
+                level: args.level, ilevel: args.ilevel, hlevel: args.hlevel,
+                four_not_six: false)
+        r += 1
+    }
+}
+
+// normal_hfilter_mb_16! filters 16 rows at a vertical MB boundary edge
+// using the normal filter6. Each row's edge pixels (p3..q3) are at step=1
+// (consecutive bytes). Used for the Y plane.
+pri func decoder.normal_hfilter_mb_16!(workbuf: slice base.u8, q0_off: base.u64,
+        level: base.u32, ilevel: base.u32, hlevel: base.u32),
+        choosy,
+{
+    var r : base.u32
+
+    r = 0
+    while r < 16 {
+        this.filter246!(workbuf: args.workbuf,
+                q0_idx: args.q0_off ~mod+ ((r as base.u64) * (this.y_stride as base.u64)),
+                step: 1,
+                level: args.level, ilevel: args.ilevel, hlevel: args.hlevel,
+                four_not_six: false)
+        r += 1
+    }
+}
+
+// normal_hfilter_mb_8! filters 8 rows at a vertical MB boundary edge
+// using the normal filter6. Used for U/V planes.
+pri func decoder.normal_hfilter_mb_8!(workbuf: slice base.u8, q0_off: base.u64,
+        level: base.u32, ilevel: base.u32, hlevel: base.u32),
+        choosy,
+{
+    var r : base.u32
+
+    r = 0
+    while r < 8 {
+        this.filter246!(workbuf: args.workbuf,
+                q0_idx: args.q0_off ~mod+ ((r as base.u64) * (this.uv_stride as base.u64)),
+                step: 1,
+                level: args.level, ilevel: args.ilevel, hlevel: args.hlevel,
+                four_not_six: false)
+        r += 1
+    }
+}
+
+// normal_hfilter_inner_16! filters 16 rows at a vertical inner sub-block edge
+// using the normal filter4. Used for the Y plane (3 inner edges per MB).
+pri func decoder.normal_hfilter_inner_16!(workbuf: slice base.u8, q0_off: base.u64,
+        level: base.u32, ilevel: base.u32, hlevel: base.u32),
+        choosy,
+{
+    var r : base.u32
+
+    r = 0
+    while r < 16 {
+        this.filter246!(workbuf: args.workbuf,
+                q0_idx: args.q0_off ~mod+ ((r as base.u64) * (this.y_stride as base.u64)),
+                step: 1,
+                level: args.level, ilevel: args.ilevel, hlevel: args.hlevel,
+                four_not_six: true)
+        r += 1
+    }
+}
+
+// normal_hfilter_inner_8! filters 8 rows at a vertical inner sub-block edge
+// using the normal filter4. Used for U/V planes (1 inner edge per plane).
+pri func decoder.normal_hfilter_inner_8!(workbuf: slice base.u8, q0_off: base.u64,
+        level: base.u32, ilevel: base.u32, hlevel: base.u32),
+        choosy,
+{
+    var r : base.u32
+
+    r = 0
+    while r < 8 {
+        this.filter246!(workbuf: args.workbuf,
+                q0_idx: args.q0_off ~mod+ ((r as base.u64) * (this.uv_stride as base.u64)),
+                step: 1,
+                level: args.level, ilevel: args.ilevel, hlevel: args.hlevel,
+                four_not_six: true)
+        r += 1
+    }
+}
+
+// normal_vfilter_inner_8! filters 8 contiguous pixels at a horizontal inner
+// sub-block edge using the normal filter4. Used for U/V planes.
+pri func decoder.normal_vfilter_inner_8!(workbuf: slice base.u8, q0_off: base.u64,
+        level: base.u32, ilevel: base.u32, hlevel: base.u32),
+        choosy,
+{
+    var r : base.u32
+
+    r = 0
+    while r < 8 {
+        this.filter246!(workbuf: args.workbuf,
+                q0_idx: args.q0_off ~mod+ (r as base.u64),
+                step: this.uv_stride as base.u64,
+                level: args.level, ilevel: args.ilevel, hlevel: args.hlevel,
+                four_not_six: true)
+        r += 1
     }
 }
 
@@ -297,7 +460,19 @@ pri func decoder.clamp255!(v: base.u32) base.u32 {
 // apply_normal_filter_all! applies the normal loop filter (filter_type=0).
 // Processes Y, U, and V planes.
 pri func decoder.apply_normal_filter_all!(workbuf: slice base.u8) {
-    var mby      : base.u32
+    var mby : base.u32
+
+    mby = 0
+    while mby < this.mb_height {
+        this.apply_normal_filter_row!(workbuf: args.workbuf, mby: mby)
+        if mby < 0x3FF {
+            mby += 1
+        }
+    }
+}
+
+// apply_normal_filter_row! applies the normal loop filter to a single MB row.
+pri func decoder.apply_normal_filter_row!(workbuf: slice base.u8, mby: base.u32) {
     var mbx      : base.u32
     var mb_idx   : base.u32
     var f_level  : base.u32
@@ -307,203 +482,100 @@ pri func decoder.apply_normal_filter_all!(workbuf: slice base.u8) {
     var y_off    : base.u64
     var u_off    : base.u64
     var v_off    : base.u64
-    var r        : base.u32
-    var idx      : base.u64
 
-    mby = 0
-    while mby < this.mb_height {
-        mbx = 0
-        while mbx < this.mb_width {
-            mb_idx = (mby ~mod* this.mb_width) ~mod+ mbx
-            if mb_idx >= 0x10_0000 {
-                mbx ~mod+= 1
-                continue
-            }
-
-            f_level = this.mb_filter_level[mb_idx] as base.u32
-            if f_level == 0 {
-                mbx ~mod+= 1
-                continue
-            }
-
-            f_ilevel = this.mb_filter_ilevel[mb_idx] as base.u32
-            f_hlevel = this.mb_filter_hlevel[mb_idx] as base.u32
-            has_inner = this.mb_filter_inner[mb_idx] <> 0
-
-            // Y plane base offset.
-            y_off = ((mby as base.u64) * 16 * (this.y_stride as base.u64)) +
-                    ((mbx as base.u64) * 16)
-            // U plane base offset.
-            u_off = this.workbuf_offset_y_end +
-                    ((mby as base.u64) * 8 * (this.uv_stride as base.u64)) +
-                    ((mbx as base.u64) * 8)
-            // V plane base offset.
-            v_off = this.workbuf_offset_u_end +
-                    ((mby as base.u64) * 8 * (this.uv_stride as base.u64)) +
-                    ((mbx as base.u64) * 8)
-
-            // --- Vertical edges (left-to-right filtering) ---
-
-            // Left MB boundary (if not first column).
-            if mbx > 0 {
-                // Y: 16 rows, MB boundary uses 6-pixel filter.
-                r = 0
-                while r < 16 {
-                    idx = y_off ~mod+ ((r as base.u64) * (this.y_stride as base.u64))
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx, step: 1,
-                            level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: false)
-                    r += 1
-                }
-                // U: 8 rows.
-                r = 0
-                while r < 8 {
-                    idx = u_off ~mod+ ((r as base.u64) * (this.uv_stride as base.u64))
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx, step: 1,
-                            level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: false)
-                    r += 1
-                }
-                // V: 8 rows.
-                r = 0
-                while r < 8 {
-                    idx = v_off ~mod+ ((r as base.u64) * (this.uv_stride as base.u64))
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx, step: 1,
-                            level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: false)
-                    r += 1
-                }
-            }
-
-            // Inner vertical sub-block edges.
-            if has_inner {
-                // Y: inner edges at x+4, x+8, x+12.
-                r = 0
-                while r < 16 {
-                    idx = y_off ~mod+ ((r as base.u64) * (this.y_stride as base.u64))
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ 4, step: 1,
-                            level: f_level, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: true)
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ 8, step: 1,
-                            level: f_level, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: true)
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ 12, step: 1,
-                            level: f_level, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: true)
-                    r += 1
-                }
-                // U: inner edge at x+4.
-                r = 0
-                while r < 8 {
-                    idx = u_off ~mod+ ((r as base.u64) * (this.uv_stride as base.u64))
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ 4, step: 1,
-                            level: f_level, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: true)
-                    r += 1
-                }
-                // V: inner edge at x+4.
-                r = 0
-                while r < 8 {
-                    idx = v_off ~mod+ ((r as base.u64) * (this.uv_stride as base.u64))
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ 4, step: 1,
-                            level: f_level, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: true)
-                    r += 1
-                }
-            }
-
-            // --- Horizontal edges (top-to-bottom filtering) ---
-
-            // Top MB boundary (if not first row).
-            if mby > 0 {
-                // Y: 16 columns.
-                r = 0
-                while r < 16 {
-                    idx = y_off ~mod+ (r as base.u64)
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx, step: this.y_stride as base.u64,
-                            level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: false)
-                    r += 1
-                }
-                // U: 8 columns.
-                r = 0
-                while r < 8 {
-                    idx = u_off ~mod+ (r as base.u64)
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx, step: this.uv_stride as base.u64,
-                            level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: false)
-                    r += 1
-                }
-                // V: 8 columns.
-                r = 0
-                while r < 8 {
-                    idx = v_off ~mod+ (r as base.u64)
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx, step: this.uv_stride as base.u64,
-                            level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: false)
-                    r += 1
-                }
-            }
-
-            // Inner horizontal sub-block edges.
-            if has_inner {
-                // Y: inner edges at y+4, y+8, y+12.
-                r = 0
-                while r < 16 {
-                    idx = y_off ~mod+ (r as base.u64)
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ (4 * (this.y_stride as base.u64)), step: this.y_stride as base.u64,
-                            level: f_level, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: true)
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ (8 * (this.y_stride as base.u64)), step: this.y_stride as base.u64,
-                            level: f_level, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: true)
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ (12 * (this.y_stride as base.u64)), step: this.y_stride as base.u64,
-                            level: f_level, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: true)
-                    r += 1
-                }
-                // U: inner edge at y+4.
-                r = 0
-                while r < 8 {
-                    idx = u_off ~mod+ (r as base.u64)
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ (4 * (this.uv_stride as base.u64)), step: this.uv_stride as base.u64,
-                            level: f_level, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: true)
-                    r += 1
-                }
-                // V: inner edge at y+4.
-                r = 0
-                while r < 8 {
-                    idx = v_off ~mod+ (r as base.u64)
-                    this.filter246!(workbuf: args.workbuf,
-                            q0_idx: idx ~mod+ (4 * (this.uv_stride as base.u64)), step: this.uv_stride as base.u64,
-                            level: f_level, ilevel: f_ilevel, hlevel: f_hlevel,
-                            four_not_six: true)
-                    r += 1
-                }
-            }
-
-            if mbx < 0x3FF {
-                mbx += 1
-            }
+    mbx = 0
+    while mbx < this.mb_width {
+        mb_idx = ((args.mby & 1) * 0x400) ~mod+ mbx
+        if mb_idx >= 0x800 {
+            mbx ~mod+= 1
+            continue
         }
-        if mby < 0x3FF {
-            mby += 1
+
+        f_level = this.mb_filter_level[mb_idx] as base.u32
+        if f_level == 0 {
+            mbx ~mod+= 1
+            continue
+        }
+
+        f_ilevel = this.mb_filter_ilevel[mb_idx] as base.u32
+        f_hlevel = this.mb_filter_hlevel[mb_idx] as base.u32
+        has_inner = this.mb_filter_inner[mb_idx] <> 0
+
+        y_off = ((args.mby as base.u64) * 16 * (this.y_stride as base.u64)) +
+                ((mbx as base.u64) * 16)
+        u_off = this.workbuf_offset_y_end +
+                ((args.mby as base.u64) * 8 * (this.uv_stride as base.u64)) +
+                ((mbx as base.u64) * 8)
+        v_off = this.workbuf_offset_u_end +
+                ((args.mby as base.u64) * 8 * (this.uv_stride as base.u64)) +
+                ((mbx as base.u64) * 8)
+
+        // --- Vertical edges (left-to-right filtering) ---
+
+        if mbx > 0 {
+            this.normal_hfilter_mb_16!(workbuf: args.workbuf,
+                    q0_off: y_off,
+                    level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel)
+            this.normal_hfilter_mb_8!(workbuf: args.workbuf,
+                    q0_off: u_off,
+                    level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel)
+            this.normal_hfilter_mb_8!(workbuf: args.workbuf,
+                    q0_off: v_off,
+                    level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel)
+        }
+
+        if has_inner {
+            this.normal_hfilter_inner_16!(workbuf: args.workbuf,
+                    q0_off: y_off ~mod+ 4,
+                    level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
+            this.normal_hfilter_inner_16!(workbuf: args.workbuf,
+                    q0_off: y_off ~mod+ 8,
+                    level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
+            this.normal_hfilter_inner_16!(workbuf: args.workbuf,
+                    q0_off: y_off ~mod+ 12,
+                    level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
+            this.normal_hfilter_inner_8!(workbuf: args.workbuf,
+                    q0_off: u_off ~mod+ 4,
+                    level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
+            this.normal_hfilter_inner_8!(workbuf: args.workbuf,
+                    q0_off: v_off ~mod+ 4,
+                    level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
+        }
+
+        // --- Horizontal edges (top-to-bottom filtering) ---
+
+        if args.mby > 0 {
+            this.normal_vfilter_mb_16!(workbuf: args.workbuf,
+                    q0_off: y_off,
+                    level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel)
+            this.normal_vfilter_mb_8!(workbuf: args.workbuf,
+                    q0_off: u_off,
+                    level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel)
+            this.normal_vfilter_mb_8!(workbuf: args.workbuf,
+                    q0_off: v_off,
+                    level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel)
+        }
+
+        if has_inner {
+            this.normal_vfilter_inner_16!(workbuf: args.workbuf,
+                    q0_off: y_off ~mod+ (4 * (this.y_stride as base.u64)),
+                    level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
+            this.normal_vfilter_inner_16!(workbuf: args.workbuf,
+                    q0_off: y_off ~mod+ (8 * (this.y_stride as base.u64)),
+                    level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
+            this.normal_vfilter_inner_16!(workbuf: args.workbuf,
+                    q0_off: y_off ~mod+ (12 * (this.y_stride as base.u64)),
+                    level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
+            this.normal_vfilter_inner_8!(workbuf: args.workbuf,
+                    q0_off: u_off ~mod+ (4 * (this.uv_stride as base.u64)),
+                    level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
+            this.normal_vfilter_inner_8!(workbuf: args.workbuf,
+                    q0_off: v_off ~mod+ (4 * (this.uv_stride as base.u64)),
+                    level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
+        }
+
+        if mbx < 0x3FF {
+            mbx += 1
         }
     }
 }

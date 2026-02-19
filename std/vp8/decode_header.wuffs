@@ -259,6 +259,93 @@ pri func decoder.compute_dequant_values!() {
     }
 }
 
+// precompute_filter_strengths! precomputes filter strength parameters for
+// each (segment, is_i4x4) combination, avoiding per-MB recomputation.
+// Must be called after decode_partition0 (which sets seg_filter_level,
+// lf_delta_enabled, lf_ref_delta, lf_mode_delta, sharpness_level).
+pri func decoder.precompute_filter_strengths!() {
+    var seg    : base.u32
+    var i4x4   : base.u32
+    var idx    : base.u32
+    var level  : base.u32
+    var ref_d  : base.i32
+    var mode_d : base.i32
+    var ilevel : base.u32
+    var hlevel : base.u32
+
+    seg = 0
+    while seg < 4 {
+        i4x4 = 0
+        while i4x4 < 2,
+                inv seg < 4,
+        {
+            idx = (seg * 2) + i4x4
+            if idx >= 8 {
+                break
+            }
+
+            level = this.seg_filter_level[seg]
+            if level > 63 {
+                level = 63
+            }
+
+            if this.lf_delta_enabled {
+                ref_d = this.lf_ref_delta[0]
+                if (ref_d <= -1) and (ref_d >= -63) {
+                    level ~mod-= ((-(ref_d)) & 0x3F) as base.u32
+                } else if ref_d > 0 {
+                    level ~mod+= (ref_d & 0x3F) as base.u32
+                }
+                if i4x4 <> 0 {
+                    mode_d = this.lf_mode_delta[0]
+                    if (mode_d <= -1) and (mode_d >= -63) {
+                        level ~mod-= ((-(mode_d)) & 0x3F) as base.u32
+                    } else if mode_d > 0 {
+                        level ~mod+= (mode_d & 0x3F) as base.u32
+                    }
+                }
+                if level > 63 {
+                    level = 0
+                }
+            }
+
+            if (level > 0) and (level <= 63) {
+                ilevel = level
+                if this.sharpness_level > 4 {
+                    ilevel >>= 2
+                } else if this.sharpness_level > 0 {
+                    ilevel >>= 1
+                }
+                if this.sharpness_level > 0 {
+                    if ilevel > (9 - (this.sharpness_level as base.u32)) {
+                        ilevel = 9 - (this.sharpness_level as base.u32)
+                    }
+                }
+                if ilevel < 1 {
+                    ilevel = 1
+                }
+
+                this.fstrength_ilevel[idx] = (ilevel & 0xFF) as base.u8
+
+                if level < 15 {
+                    hlevel = 0
+                } else if level < 40 {
+                    hlevel = 1
+                } else {
+                    hlevel = 2
+                }
+                this.fstrength_hlevel[idx] = (hlevel & 0xFF) as base.u8
+
+                level = (2 ~mod* level) ~mod+ ilevel
+                this.fstrength_level[idx] = (level & 0xFF) as base.u8
+            }
+
+            i4x4 += 1
+        }
+        seg += 1
+    }
+}
+
 pri func decoder.clamp_qi!(qi: base.u32[..= 127], delta: base.i32) base.u32[..= 127] {
     var neg : base.u32[..= 127]
     var pos : base.u32[..= 127]

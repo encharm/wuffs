@@ -357,21 +357,25 @@ var Funcs = [][]string{
 }
 
 var funcsOther = [...]string{
+	"u8.count_leading_zeroes() u32[..= 8]",
 	"u8.high_bits(n: u32[..= 7]) u8",
 	"u8.low_bits(n: u32[..= 7]) u8",
 	"u8.max(no_less_than: u8) u8",
 	"u8.min(no_more_than: u8) u8",
 
+	"u16.count_leading_zeroes() u32[..= 16]",
 	"u16.high_bits(n: u32[..= 15]) u16",
 	"u16.low_bits(n: u32[..= 15]) u16",
 	"u16.max(no_less_than: u16) u16",
 	"u16.min(no_more_than: u16) u16",
 
+	"u32.count_leading_zeroes() u32[..= 32]",
 	"u32.high_bits(n: u32[..= 31]) u32",
 	"u32.low_bits(n: u32[..= 31]) u32",
 	"u32.max(no_less_than: u32) u32",
 	"u32.min(no_more_than: u32) u32",
 
+	"u64.count_leading_zeroes() u32[..= 64]",
 	"u64.high_bits(n: u32[..= 63]) u64",
 	"u64.low_bits(n: u32[..= 63]) u64",
 	"u64.max(no_less_than: u64) u64",
@@ -785,6 +789,12 @@ var funcsOther = [...]string{
 
 	"arm_neon_utility.make_u8x8_slice64(a: roslice base.u8) arm_neon_u8x8",
 	"arm_neon_utility.make_u8x16_slice128(a: roslice base.u8) arm_neon_u8x16",
+	"arm_neon_utility.make_u32x4_slice_u32lex4(a: roslice base.u32) arm_neon_u32x4",
+
+	// ---- arm_neon store operations
+
+	"arm_neon_u8x8.store_slice64!(a: slice base.u8)",
+	"arm_neon_u8x16.store_slice128!(a: slice base.u8)",
 
 	// ---- arm_neon_uAxB.as_uCxD
 
@@ -827,8 +837,10 @@ var funcsOther = [...]string{
 	"x86_sse42_utility.make_m128i_single_u32(a: u32) x86_m128i",
 	"x86_sse42_utility.make_m128i_single_u64(a: u64) x86_m128i",
 
+	"x86_sse42_utility.make_m128i_slice64(a: roslice base.u8) x86_m128i",
 	"x86_sse42_utility.make_m128i_slice128(a: roslice base.u8) x86_m128i",
 	"x86_sse42_utility.make_m128i_slice_u16lex8(a: roslice base.u16) x86_m128i",
+	"x86_sse42_utility.make_m128i_slice_u32lex4(a: roslice base.u32) x86_m128i",
 
 	"x86_sse42_utility.make_m128i_zeroes() x86_m128i",
 
@@ -849,7 +861,11 @@ var funcsOther = [...]string{
 	"x86_m128i._mm_add_epi32(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_add_epi64(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_add_epi8(b: x86_m128i) x86_m128i",
+	"x86_m128i._mm_adds_epi8(b: x86_m128i) x86_m128i",
+	"x86_m128i._mm_adds_epi16(b: x86_m128i) x86_m128i",
+	"x86_m128i._mm_adds_epu8(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_and_si128(b: x86_m128i) x86_m128i",
+	"x86_m128i._mm_andnot_si128(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_avg_epu16(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_avg_epu8(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_blend_epi16(b: x86_m128i, imm8: u32) x86_m128i",
@@ -859,6 +875,9 @@ var funcsOther = [...]string{
 	"x86_m128i._mm_cmpeq_epi32(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_cmpeq_epi64(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_cmpeq_epi8(b: x86_m128i) x86_m128i",
+	"x86_m128i._mm_cmpgt_epi8(b: x86_m128i) x86_m128i",
+	"x86_m128i._mm_cmpgt_epi16(b: x86_m128i) x86_m128i",
+	"x86_m128i._mm_cmpgt_epi32(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_extract_epi16(imm8: u32) u16",
 	"x86_m128i._mm_extract_epi32(imm8: u32) u32",
 	"x86_m128i._mm_extract_epi64(imm8: u32) u64",
@@ -877,9 +896,12 @@ var funcsOther = [...]string{
 	"x86_m128i._mm_min_epu16(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_min_epu32(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_min_epu8(b: x86_m128i) x86_m128i",
+	"x86_m128i._mm_mulhi_epi16(b: x86_m128i) x86_m128i",
+	"x86_m128i._mm_mullo_epi16(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_mullo_epi32(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_or_si128(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_packs_epi16(b: x86_m128i) x86_m128i",
+	"x86_m128i._mm_packs_epi32(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_packus_epi16(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_sad_epu8(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_shuffle_epi32(imm8: u32) x86_m128i",
@@ -888,6 +910,8 @@ var funcsOther = [...]string{
 	"x86_m128i._mm_slli_epi32(imm8: u32) x86_m128i",
 	"x86_m128i._mm_slli_epi64(imm8: u32) x86_m128i",
 	"x86_m128i._mm_slli_si128(imm8: u32) x86_m128i",
+	"x86_m128i._mm_srai_epi16(imm8: u32) x86_m128i",
+	"x86_m128i._mm_srai_epi32(imm8: u32) x86_m128i",
 	"x86_m128i._mm_srli_epi16(imm8: u32) x86_m128i",
 	"x86_m128i._mm_srli_epi32(imm8: u32) x86_m128i",
 	"x86_m128i._mm_srli_epi64(imm8: u32) x86_m128i",
@@ -896,6 +920,10 @@ var funcsOther = [...]string{
 	"x86_m128i._mm_sub_epi32(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_sub_epi64(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_sub_epi8(b: x86_m128i) x86_m128i",
+	"x86_m128i._mm_subs_epi8(b: x86_m128i) x86_m128i",
+	"x86_m128i._mm_subs_epi16(b: x86_m128i) x86_m128i",
+	"x86_m128i._mm_subs_epu8(b: x86_m128i) x86_m128i",
+	"x86_m128i._mm_subs_epu16(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_unpackhi_epi16(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_unpackhi_epi32(b: x86_m128i) x86_m128i",
 	"x86_m128i._mm_unpackhi_epi64(b: x86_m128i) x86_m128i",
