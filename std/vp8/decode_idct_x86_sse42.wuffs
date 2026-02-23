@@ -69,7 +69,6 @@ pri func decoder.idct_add_x86_sse42!(dst: slice base.u8, stride: base.u32, coeff
     var pred16 : base.x86_m128i
     var sum    : base.x86_m128i
     var out    : base.x86_m128i
-    var val    : base.u32
 
     var off : base.u32[..= 384]
     var i   : base.u32
@@ -179,24 +178,16 @@ pri func decoder.idct_add_x86_sse42!(dst: slice base.u8, stride: base.u32, coeff
     row3 = ts1._mm_unpackhi_epi64(b: ts3)
 
     // ---- Add to prediction and clamp to [0, 255] ----
-    // Load 4 prediction bytes as u32, pack to i16, add IDCT, packus to u8.
-    // Use reslicing (like JPEG IDCT) so bounds checks use constant indices.
+    // Load 4 prediction bytes, zero-extend to i16, add IDCT, packus to u8.
 
     // Row 0.
     if 4 <= args.dst.length() {
-        pred = util.make_m128i_multiple_u32(
-                a00: args.dst[0] as base.u32,
-                a01: args.dst[1] as base.u32,
-                a02: args.dst[2] as base.u32,
-                a03: args.dst[3] as base.u32)
-        pred16 = pred._mm_packs_epi32(b: k_0)
+        assert args.dst.length() >= 4 via "a >= b: b <= a"()
+        pred = util.make_m128i_single_u32(a: args.dst.peek_u32le())
+        pred16 = pred._mm_unpacklo_epi8(b: k_0)
         sum = pred16._mm_add_epi16(b: row0)
         out = sum._mm_packus_epi16(b: sum)
-        val = out.truncate_u32()
-        args.dst[0] = (val & 0xFF) as base.u8
-        args.dst[1] = ((val >> 8) & 0xFF) as base.u8
-        args.dst[2] = ((val >> 16) & 0xFF) as base.u8
-        args.dst[3] = (val >> 24) as base.u8
+        args.dst.poke_u32le!(a: out.truncate_u32())
     }
     if (args.stride as base.u64) <= args.dst.length() {
         args.dst = args.dst[(args.stride as base.u64) ..]
@@ -204,19 +195,12 @@ pri func decoder.idct_add_x86_sse42!(dst: slice base.u8, stride: base.u32, coeff
 
     // Row 1.
     if 4 <= args.dst.length() {
-        pred = util.make_m128i_multiple_u32(
-                a00: args.dst[0] as base.u32,
-                a01: args.dst[1] as base.u32,
-                a02: args.dst[2] as base.u32,
-                a03: args.dst[3] as base.u32)
-        pred16 = pred._mm_packs_epi32(b: k_0)
+        assert args.dst.length() >= 4 via "a >= b: b <= a"()
+        pred = util.make_m128i_single_u32(a: args.dst.peek_u32le())
+        pred16 = pred._mm_unpacklo_epi8(b: k_0)
         sum = pred16._mm_add_epi16(b: row1)
         out = sum._mm_packus_epi16(b: sum)
-        val = out.truncate_u32()
-        args.dst[0] = (val & 0xFF) as base.u8
-        args.dst[1] = ((val >> 8) & 0xFF) as base.u8
-        args.dst[2] = ((val >> 16) & 0xFF) as base.u8
-        args.dst[3] = (val >> 24) as base.u8
+        args.dst.poke_u32le!(a: out.truncate_u32())
     }
     if (args.stride as base.u64) <= args.dst.length() {
         args.dst = args.dst[(args.stride as base.u64) ..]
@@ -224,19 +208,12 @@ pri func decoder.idct_add_x86_sse42!(dst: slice base.u8, stride: base.u32, coeff
 
     // Row 2.
     if 4 <= args.dst.length() {
-        pred = util.make_m128i_multiple_u32(
-                a00: args.dst[0] as base.u32,
-                a01: args.dst[1] as base.u32,
-                a02: args.dst[2] as base.u32,
-                a03: args.dst[3] as base.u32)
-        pred16 = pred._mm_packs_epi32(b: k_0)
+        assert args.dst.length() >= 4 via "a >= b: b <= a"()
+        pred = util.make_m128i_single_u32(a: args.dst.peek_u32le())
+        pred16 = pred._mm_unpacklo_epi8(b: k_0)
         sum = pred16._mm_add_epi16(b: row2)
         out = sum._mm_packus_epi16(b: sum)
-        val = out.truncate_u32()
-        args.dst[0] = (val & 0xFF) as base.u8
-        args.dst[1] = ((val >> 8) & 0xFF) as base.u8
-        args.dst[2] = ((val >> 16) & 0xFF) as base.u8
-        args.dst[3] = (val >> 24) as base.u8
+        args.dst.poke_u32le!(a: out.truncate_u32())
     }
     if (args.stride as base.u64) <= args.dst.length() {
         args.dst = args.dst[(args.stride as base.u64) ..]
@@ -244,19 +221,12 @@ pri func decoder.idct_add_x86_sse42!(dst: slice base.u8, stride: base.u32, coeff
 
     // Row 3.
     if 4 <= args.dst.length() {
-        pred = util.make_m128i_multiple_u32(
-                a00: args.dst[0] as base.u32,
-                a01: args.dst[1] as base.u32,
-                a02: args.dst[2] as base.u32,
-                a03: args.dst[3] as base.u32)
-        pred16 = pred._mm_packs_epi32(b: k_0)
+        assert args.dst.length() >= 4 via "a >= b: b <= a"()
+        pred = util.make_m128i_single_u32(a: args.dst.peek_u32le())
+        pred16 = pred._mm_unpacklo_epi8(b: k_0)
         sum = pred16._mm_add_epi16(b: row3)
         out = sum._mm_packus_epi16(b: sum)
-        val = out.truncate_u32()
-        args.dst[0] = (val & 0xFF) as base.u8
-        args.dst[1] = ((val >> 8) & 0xFF) as base.u8
-        args.dst[2] = ((val >> 16) & 0xFF) as base.u8
-        args.dst[3] = (val >> 24) as base.u8
+        args.dst.poke_u32le!(a: out.truncate_u32())
     }
 
     // Clear the coefficients.
@@ -282,7 +252,6 @@ pri func decoder.idct_dc_add_x86_sse42!(dst: slice base.u8, stride: base.u32, co
     var pred16 : base.x86_m128i
     var sum    : base.x86_m128i
     var out    : base.x86_m128i
-    var val    : base.u32
 
     var off    : base.u32[..= 384]
     var dc     : base.u32
@@ -302,19 +271,12 @@ pri func decoder.idct_dc_add_x86_sse42!(dst: slice base.u8, stride: base.u32, co
 
     // Row 0.
     if 4 <= args.dst.length() {
-        pred = util.make_m128i_multiple_u32(
-                a00: args.dst[0] as base.u32,
-                a01: args.dst[1] as base.u32,
-                a02: args.dst[2] as base.u32,
-                a03: args.dst[3] as base.u32)
-        pred16 = pred._mm_packs_epi32(b: k_0)
+        assert args.dst.length() >= 4 via "a >= b: b <= a"()
+        pred = util.make_m128i_single_u32(a: args.dst.peek_u32le())
+        pred16 = pred._mm_unpacklo_epi8(b: k_0)
         sum = pred16._mm_add_epi16(b: dc16)
         out = sum._mm_packus_epi16(b: sum)
-        val = out.truncate_u32()
-        args.dst[0] = (val & 0xFF) as base.u8
-        args.dst[1] = ((val >> 8) & 0xFF) as base.u8
-        args.dst[2] = ((val >> 16) & 0xFF) as base.u8
-        args.dst[3] = (val >> 24) as base.u8
+        args.dst.poke_u32le!(a: out.truncate_u32())
     }
     if (args.stride as base.u64) <= args.dst.length() {
         args.dst = args.dst[(args.stride as base.u64) ..]
@@ -322,19 +284,12 @@ pri func decoder.idct_dc_add_x86_sse42!(dst: slice base.u8, stride: base.u32, co
 
     // Row 1.
     if 4 <= args.dst.length() {
-        pred = util.make_m128i_multiple_u32(
-                a00: args.dst[0] as base.u32,
-                a01: args.dst[1] as base.u32,
-                a02: args.dst[2] as base.u32,
-                a03: args.dst[3] as base.u32)
-        pred16 = pred._mm_packs_epi32(b: k_0)
+        assert args.dst.length() >= 4 via "a >= b: b <= a"()
+        pred = util.make_m128i_single_u32(a: args.dst.peek_u32le())
+        pred16 = pred._mm_unpacklo_epi8(b: k_0)
         sum = pred16._mm_add_epi16(b: dc16)
         out = sum._mm_packus_epi16(b: sum)
-        val = out.truncate_u32()
-        args.dst[0] = (val & 0xFF) as base.u8
-        args.dst[1] = ((val >> 8) & 0xFF) as base.u8
-        args.dst[2] = ((val >> 16) & 0xFF) as base.u8
-        args.dst[3] = (val >> 24) as base.u8
+        args.dst.poke_u32le!(a: out.truncate_u32())
     }
     if (args.stride as base.u64) <= args.dst.length() {
         args.dst = args.dst[(args.stride as base.u64) ..]
@@ -342,19 +297,12 @@ pri func decoder.idct_dc_add_x86_sse42!(dst: slice base.u8, stride: base.u32, co
 
     // Row 2.
     if 4 <= args.dst.length() {
-        pred = util.make_m128i_multiple_u32(
-                a00: args.dst[0] as base.u32,
-                a01: args.dst[1] as base.u32,
-                a02: args.dst[2] as base.u32,
-                a03: args.dst[3] as base.u32)
-        pred16 = pred._mm_packs_epi32(b: k_0)
+        assert args.dst.length() >= 4 via "a >= b: b <= a"()
+        pred = util.make_m128i_single_u32(a: args.dst.peek_u32le())
+        pred16 = pred._mm_unpacklo_epi8(b: k_0)
         sum = pred16._mm_add_epi16(b: dc16)
         out = sum._mm_packus_epi16(b: sum)
-        val = out.truncate_u32()
-        args.dst[0] = (val & 0xFF) as base.u8
-        args.dst[1] = ((val >> 8) & 0xFF) as base.u8
-        args.dst[2] = ((val >> 16) & 0xFF) as base.u8
-        args.dst[3] = (val >> 24) as base.u8
+        args.dst.poke_u32le!(a: out.truncate_u32())
     }
     if (args.stride as base.u64) <= args.dst.length() {
         args.dst = args.dst[(args.stride as base.u64) ..]
@@ -362,18 +310,11 @@ pri func decoder.idct_dc_add_x86_sse42!(dst: slice base.u8, stride: base.u32, co
 
     // Row 3.
     if 4 <= args.dst.length() {
-        pred = util.make_m128i_multiple_u32(
-                a00: args.dst[0] as base.u32,
-                a01: args.dst[1] as base.u32,
-                a02: args.dst[2] as base.u32,
-                a03: args.dst[3] as base.u32)
-        pred16 = pred._mm_packs_epi32(b: k_0)
+        assert args.dst.length() >= 4 via "a >= b: b <= a"()
+        pred = util.make_m128i_single_u32(a: args.dst.peek_u32le())
+        pred16 = pred._mm_unpacklo_epi8(b: k_0)
         sum = pred16._mm_add_epi16(b: dc16)
         out = sum._mm_packus_epi16(b: sum)
-        val = out.truncate_u32()
-        args.dst[0] = (val & 0xFF) as base.u8
-        args.dst[1] = ((val >> 8) & 0xFF) as base.u8
-        args.dst[2] = ((val >> 16) & 0xFF) as base.u8
-        args.dst[3] = (val >> 24) as base.u8
+        args.dst.poke_u32le!(a: out.truncate_u32())
     }
 }

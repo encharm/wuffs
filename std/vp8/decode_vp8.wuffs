@@ -365,6 +365,10 @@ pri func decoder.do_decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reade
     choose idct_dc_add = [
             idct_dc_add_arm_neon,
             idct_dc_add_x86_sse42]
+    choose idct_add_pair = [
+            idct_add_pair_x86_avx2]
+    choose idct_dc_add_pair = [
+            idct_dc_add_pair_x86_avx2]
     choose predict_16x16 = [
             predict_16x16_arm_neon,
             predict_16x16_x86_sse42]
@@ -398,10 +402,17 @@ pri func decoder.do_decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reade
     choose normal_vfilter_inner_8 = [
             normal_vfilter_inner_8_arm_neon,
             normal_vfilter_inner_8_x86_sse42]
+    choose normal_vfilter_mb_uv = [
+            normal_vfilter_mb_uv_x86_avx2]
+    choose normal_hfilter_mb_uv = [
+            normal_hfilter_mb_uv_x86_avx2]
+    choose normal_vfilter_inner_uv = [
+            normal_vfilter_inner_uv_x86_avx2]
+    choose normal_hfilter_inner_uv = [
+            normal_hfilter_inner_uv_x86_avx2]
 
     // Initialize coefficient probabilities from defaults.
     this.init_coeff_probs!()
-
     // Copy partition 0 data from src into workbuf[v_end..] so that the
     // boolean decoder can be refilled during MB mode decoding.
     this.p0_wbuf_ri = 0
@@ -452,7 +463,6 @@ pri func decoder.init_coeff_probs!() {
         i += 1
     }
 }
-
 
 // swizzle_mb_row! converts one MB row of YCbCr data to the output pixel format.
 // The swizzler must have been prepared before calling this function.

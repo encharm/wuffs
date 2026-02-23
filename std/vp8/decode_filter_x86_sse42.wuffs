@@ -23,8 +23,9 @@
 pri func decoder.simple_vfilter_16_x86_sse42!(workbuf: slice base.u8, q0_off: base.u64, limit: base.u32),
         choose cpu_arch >= x86_sse42,
 {
-    var util : base.x86_sse42_utility
-    var wb   : slice base.u8
+    var util   : base.x86_sse42_utility
+    var wb     : slice base.u8
+    var stride : base.u64
 
     // SSE registers.
     var p1       : base.x86_m128i
@@ -49,8 +50,14 @@ pri func decoder.simple_vfilter_16_x86_sse42!(workbuf: slice base.u8, q0_off: ba
     var p1s      : base.x86_m128i
     var q1s      : base.x86_m128i
 
+    stride = this.y_stride as base.u64
+    if stride < 16 {
+        return nothing
+    }
+    assert 16 <= stride via "a <= b: b >= a"()
+
     // Need at least 2*stride bytes before q0_off for p1 and p0 rows.
-    if args.q0_off < (2 * (this.y_stride as base.u64)) {
+    if args.q0_off < (2 * stride) {
         return nothing
     }
 
@@ -59,49 +66,43 @@ pri func decoder.simple_vfilter_16_x86_sse42!(workbuf: slice base.u8, q0_off: ba
     wb = args.workbuf
 
     // Reslice wb to p1 position: q0_off - 2*stride.
-    if (args.q0_off - (2 * (this.y_stride as base.u64))) <= wb.length() {
-        wb = wb[args.q0_off - (2 * (this.y_stride as base.u64)) ..]
+    if (args.q0_off - (2 * stride)) <= wb.length() {
+        wb = wb[args.q0_off - (2 * stride) ..]
     } else {
         return nothing
     }
 
     // Load p1 row (16 contiguous bytes).
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p1 = util.make_m128i_slice128(a: wb[.. 16])
 
     // Advance by stride to p0 row.
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
     // Load p0 row.
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p0 = util.make_m128i_slice128(a: wb[.. 16])
 
     // Advance by stride to q0 row.
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
     // Load q0 row.
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     q0 = util.make_m128i_slice128(a: wb[.. 16])
 
     // Advance by stride to q1 row.
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    // Load q1 row.
+    // Load q1 row (last row, no stride advance).
     if 16 > wb.length() {
         return nothing
     }
@@ -179,29 +180,28 @@ pri func decoder.simple_vfilter_16_x86_sse42!(workbuf: slice base.u8, q0_off: ba
     // ---- Store p0 and q0 back ----
     // Reslice args.workbuf to p0 position: q0_off - stride.
     // We know q0_off >= 2*stride from the guard above, so q0_off >= stride.
-    if args.q0_off < (this.y_stride as base.u64) {
+    if args.q0_off < stride {
         return nothing
     }
-    if (args.q0_off - (this.y_stride as base.u64)) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[args.q0_off - (this.y_stride as base.u64) ..]
+    if (args.q0_off - stride) <= args.workbuf.length() {
+        args.workbuf = args.workbuf[args.q0_off - stride ..]
     } else {
         return nothing
     }
 
     // Store p0 row.
-    if 16 <= args.workbuf.length() {
-        p0.store_slice128!(a: args.workbuf[.. 16])
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 16 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    p0.store_slice128!(a: args.workbuf[.. 16])
+    args.workbuf = args.workbuf[stride ..]
 
-    // Advance by stride to q0.
-    if (this.y_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.y_stride as base.u64) ..]
+    // Store q0 row (last row, no stride advance).
+    if 16 > args.workbuf.length() {
+        return nothing
     }
-
-    // Store q0 row.
-    if 16 <= args.workbuf.length() {
-        q0.store_slice128!(a: args.workbuf[.. 16])
-    }
+    q0.store_slice128!(a: args.workbuf[.. 16])
 }
 
 // VP8 normal loop filter (filter4), SSE4.2 version.
@@ -214,8 +214,9 @@ pri func decoder.normal_vfilter_inner_16_x86_sse42!(workbuf: slice base.u8, q0_o
         level: base.u32, ilevel: base.u32, hlevel: base.u32),
         choose cpu_arch >= x86_sse42,
 {
-    var util : base.x86_sse42_utility
-    var wb   : slice base.u8
+    var util   : base.x86_sse42_utility
+    var wb     : slice base.u8
+    var stride : base.u64
 
     var p3        : base.x86_m128i
     var p2        : base.x86_m128i
@@ -246,83 +247,75 @@ pri func decoder.normal_vfilter_inner_16_x86_sse42!(workbuf: slice base.u8, q0_o
     var lo        : base.x86_m128i
     var hi        : base.x86_m128i
 
+    stride = this.y_stride as base.u64
+    if stride < 16 {
+        return nothing
+    }
+    assert 16 <= stride via "a <= b: b >= a"()
+
     // Need at least 4*stride bytes before q0_off for p3 row.
-    if args.q0_off < (4 * (this.y_stride as base.u64)) {
+    if args.q0_off < (4 * stride) {
         return nothing
     }
 
     wb = args.workbuf
 
     // Reslice to p3 position.
-    if (args.q0_off - (4 * (this.y_stride as base.u64))) <= wb.length() {
-        wb = wb[args.q0_off - (4 * (this.y_stride as base.u64)) ..]
+    if (args.q0_off - (4 * stride)) <= wb.length() {
+        wb = wb[args.q0_off - (4 * stride) ..]
     } else {
         return nothing
     }
 
     // Load 8 rows: p3, p2, p1, p0, q0, q1, q2, q3.
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p3 = util.make_m128i_slice128(a: wb[.. 16])
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p2 = util.make_m128i_slice128(a: wb[.. 16])
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p1 = util.make_m128i_slice128(a: wb[.. 16])
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p0 = util.make_m128i_slice128(a: wb[.. 16])
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     q0 = util.make_m128i_slice128(a: wb[.. 16])
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     q1 = util.make_m128i_slice128(a: wb[.. 16])
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     q2 = util.make_m128i_slice128(a: wb[.. 16])
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
     if 16 > wb.length() {
         return nothing
@@ -424,39 +417,40 @@ pri func decoder.normal_vfilter_inner_16_x86_sse42!(workbuf: slice base.u8, q0_o
     q1 = q1._mm_xor_si128(b: sign_bit)
 
     // ---- Store p1, p0, q0, q1 ----
-    if args.q0_off < (2 * (this.y_stride as base.u64)) {
+    if args.q0_off < (2 * stride) {
         return nothing
     }
-    if (args.q0_off - (2 * (this.y_stride as base.u64))) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[args.q0_off - (2 * (this.y_stride as base.u64)) ..]
+    if (args.q0_off - (2 * stride)) <= args.workbuf.length() {
+        args.workbuf = args.workbuf[args.q0_off - (2 * stride) ..]
     } else {
         return nothing
     }
 
-    if 16 <= args.workbuf.length() {
-        p1.store_slice128!(a: args.workbuf[.. 16])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.y_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.y_stride as base.u64) ..]
-    }
+    assert 16 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    p1.store_slice128!(a: args.workbuf[.. 16])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 16 <= args.workbuf.length() {
-        p0.store_slice128!(a: args.workbuf[.. 16])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.y_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.y_stride as base.u64) ..]
-    }
+    assert 16 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    p0.store_slice128!(a: args.workbuf[.. 16])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 16 <= args.workbuf.length() {
-        q0.store_slice128!(a: args.workbuf[.. 16])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.y_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.y_stride as base.u64) ..]
-    }
+    assert 16 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    q0.store_slice128!(a: args.workbuf[.. 16])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 16 <= args.workbuf.length() {
-        q1.store_slice128!(a: args.workbuf[.. 16])
+    if 16 > args.workbuf.length() {
+        return nothing
     }
+    q1.store_slice128!(a: args.workbuf[.. 16])
 }
 
 // VP8 normal loop filter (filter6), SSE4.2 version.
@@ -468,8 +462,9 @@ pri func decoder.normal_vfilter_mb_16_x86_sse42!(workbuf: slice base.u8, q0_off:
         level: base.u32, ilevel: base.u32, hlevel: base.u32),
         choose cpu_arch >= x86_sse42,
 {
-    var util : base.x86_sse42_utility
-    var wb   : slice base.u8
+    var util   : base.x86_sse42_utility
+    var wb     : slice base.u8
+    var stride : base.u64
 
     var p3        : base.x86_m128i
     var p2        : base.x86_m128i
@@ -509,81 +504,73 @@ pri func decoder.normal_vfilter_mb_16_x86_sse42!(workbuf: slice base.u8, q0_off:
     var p0_adj    : base.x86_m128i
     var q0_adj    : base.x86_m128i
 
+    stride = this.y_stride as base.u64
+    if stride < 16 {
+        return nothing
+    }
+    assert 16 <= stride via "a <= b: b >= a"()
+
     // Need at least 4*stride bytes before q0_off.
-    if args.q0_off < (4 * (this.y_stride as base.u64)) {
+    if args.q0_off < (4 * stride) {
         return nothing
     }
 
     wb = args.workbuf
-    if (args.q0_off - (4 * (this.y_stride as base.u64))) <= wb.length() {
-        wb = wb[args.q0_off - (4 * (this.y_stride as base.u64)) ..]
+    if (args.q0_off - (4 * stride)) <= wb.length() {
+        wb = wb[args.q0_off - (4 * stride) ..]
     } else {
         return nothing
     }
 
     // Load 8 rows.
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p3 = util.make_m128i_slice128(a: wb[.. 16])
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p2 = util.make_m128i_slice128(a: wb[.. 16])
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p1 = util.make_m128i_slice128(a: wb[.. 16])
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p0 = util.make_m128i_slice128(a: wb[.. 16])
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     q0 = util.make_m128i_slice128(a: wb[.. 16])
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     q1 = util.make_m128i_slice128(a: wb[.. 16])
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 16 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 16 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     q2 = util.make_m128i_slice128(a: wb[.. 16])
-    if (this.y_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.y_stride as base.u64) ..]
+    wb = wb[stride ..]
 
     if 16 > wb.length() {
         return nothing
@@ -709,53 +696,54 @@ pri func decoder.normal_vfilter_mb_16_x86_sse42!(workbuf: slice base.u8, q0_off:
     q2 = q2._mm_xor_si128(b: sign_bit)
 
     // ---- Store p2, p1, p0, q0, q1, q2 ----
-    if args.q0_off < (3 * (this.y_stride as base.u64)) {
+    if args.q0_off < (3 * stride) {
         return nothing
     }
-    if (args.q0_off - (3 * (this.y_stride as base.u64))) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[args.q0_off - (3 * (this.y_stride as base.u64)) ..]
+    if (args.q0_off - (3 * stride)) <= args.workbuf.length() {
+        args.workbuf = args.workbuf[args.q0_off - (3 * stride) ..]
     } else {
         return nothing
     }
 
-    if 16 <= args.workbuf.length() {
-        p2.store_slice128!(a: args.workbuf[.. 16])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.y_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.y_stride as base.u64) ..]
-    }
+    assert 16 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    p2.store_slice128!(a: args.workbuf[.. 16])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 16 <= args.workbuf.length() {
-        p1.store_slice128!(a: args.workbuf[.. 16])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.y_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.y_stride as base.u64) ..]
-    }
+    assert 16 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    p1.store_slice128!(a: args.workbuf[.. 16])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 16 <= args.workbuf.length() {
-        p0.store_slice128!(a: args.workbuf[.. 16])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.y_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.y_stride as base.u64) ..]
-    }
+    assert 16 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    p0.store_slice128!(a: args.workbuf[.. 16])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 16 <= args.workbuf.length() {
-        q0.store_slice128!(a: args.workbuf[.. 16])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.y_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.y_stride as base.u64) ..]
-    }
+    assert 16 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    q0.store_slice128!(a: args.workbuf[.. 16])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 16 <= args.workbuf.length() {
-        q1.store_slice128!(a: args.workbuf[.. 16])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.y_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.y_stride as base.u64) ..]
-    }
+    assert 16 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    q1.store_slice128!(a: args.workbuf[.. 16])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 16 <= args.workbuf.length() {
-        q2.store_slice128!(a: args.workbuf[.. 16])
+    if 16 > args.workbuf.length() {
+        return nothing
     }
+    q2.store_slice128!(a: args.workbuf[.. 16])
 }
 
 // VP8 normal loop filter (filter6) for 8-pixel U/V horizontal MB edges, SSE4.2.
@@ -766,8 +754,9 @@ pri func decoder.normal_vfilter_mb_8_x86_sse42!(workbuf: slice base.u8, q0_off: 
         level: base.u32, ilevel: base.u32, hlevel: base.u32),
         choose cpu_arch >= x86_sse42,
 {
-    var util : base.x86_sse42_utility
-    var wb   : slice base.u8
+    var util   : base.x86_sse42_utility
+    var wb     : slice base.u8
+    var stride : base.u64
 
     var p3        : base.x86_m128i
     var p2        : base.x86_m128i
@@ -807,80 +796,72 @@ pri func decoder.normal_vfilter_mb_8_x86_sse42!(workbuf: slice base.u8, q0_off: 
     var p0_adj    : base.x86_m128i
     var q0_adj    : base.x86_m128i
 
-    if args.q0_off < (4 * (this.uv_stride as base.u64)) {
+    stride = this.uv_stride as base.u64
+    if stride < 8 {
+        return nothing
+    }
+    assert 8 <= stride via "a <= b: b >= a"()
+
+    if args.q0_off < (4 * stride) {
         return nothing
     }
 
     wb = args.workbuf
-    if (args.q0_off - (4 * (this.uv_stride as base.u64))) <= wb.length() {
-        wb = wb[args.q0_off - (4 * (this.uv_stride as base.u64)) ..]
+    if (args.q0_off - (4 * stride)) <= wb.length() {
+        wb = wb[args.q0_off - (4 * stride) ..]
     } else {
         return nothing
     }
 
     // Load 8 rows using 8-byte loads (upper 8 bytes are zero).
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p3 = util.make_m128i_slice64(a: wb[.. 8])
-    if (this.uv_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.uv_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p2 = util.make_m128i_slice64(a: wb[.. 8])
-    if (this.uv_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.uv_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p1 = util.make_m128i_slice64(a: wb[.. 8])
-    if (this.uv_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.uv_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p0 = util.make_m128i_slice64(a: wb[.. 8])
-    if (this.uv_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.uv_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     q0 = util.make_m128i_slice64(a: wb[.. 8])
-    if (this.uv_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.uv_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     q1 = util.make_m128i_slice64(a: wb[.. 8])
-    if (this.uv_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.uv_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     q2 = util.make_m128i_slice64(a: wb[.. 8])
-    if (this.uv_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.uv_stride as base.u64) ..]
+    wb = wb[stride ..]
 
     if 8 > wb.length() {
         return nothing
@@ -994,53 +975,54 @@ pri func decoder.normal_vfilter_mb_8_x86_sse42!(workbuf: slice base.u8, q0_off: 
     q2 = q2._mm_xor_si128(b: sign_bit)
 
     // ---- Store p2, p1, p0, q0, q1, q2 using 8-byte stores ----
-    if args.q0_off < (3 * (this.uv_stride as base.u64)) {
+    if args.q0_off < (3 * stride) {
         return nothing
     }
-    if (args.q0_off - (3 * (this.uv_stride as base.u64))) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[args.q0_off - (3 * (this.uv_stride as base.u64)) ..]
+    if (args.q0_off - (3 * stride)) <= args.workbuf.length() {
+        args.workbuf = args.workbuf[args.q0_off - (3 * stride) ..]
     } else {
         return nothing
     }
 
-    if 8 <= args.workbuf.length() {
-        p2.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.uv_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.uv_stride as base.u64) ..]
-    }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    p2.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 8 <= args.workbuf.length() {
-        p1.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.uv_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.uv_stride as base.u64) ..]
-    }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    p1.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 8 <= args.workbuf.length() {
-        p0.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.uv_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.uv_stride as base.u64) ..]
-    }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    p0.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 8 <= args.workbuf.length() {
-        q0.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.uv_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.uv_stride as base.u64) ..]
-    }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    q0.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 8 <= args.workbuf.length() {
-        q1.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.uv_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.uv_stride as base.u64) ..]
-    }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    q1.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 8 <= args.workbuf.length() {
-        q2.store_slice64!(a: args.workbuf[.. 8])
+    if 8 > args.workbuf.length() {
+        return nothing
     }
+    q2.store_slice64!(a: args.workbuf[.. 8])
 }
 
 // VP8 normal loop filter (filter6) for 16-row Y vertical MB edges, SSE4.2.
@@ -1124,6 +1106,10 @@ pri func decoder.normal_hfilter_mb_16_x86_sse42!(workbuf: slice base.u8, q0_off:
     var q0_adj    : base.x86_m128i
 
     stride = this.y_stride as base.u64
+    if stride < 8 {
+        return nothing
+    }
+    assert 8 <= stride via "a <= b: b >= a"()
 
     // Bounds: need 4 bytes before q0 for p3 column.
     if args.q0_off < 4 {
@@ -1139,146 +1125,116 @@ pri func decoder.normal_hfilter_mb_16_x86_sse42!(workbuf: slice base.u8, q0_off:
     // Each pair of rows is loaded and interleaved via unpacklo_epi8.
 
     // Rows 0,1
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f0 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 2,3
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f1 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 4,5
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f2 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 6,7
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f3 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 8,9
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f4 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 10,11
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f5 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 12,13
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f6 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 14,15
-    if 8 > wb.length() {
-        return nothing
-    }
-    ra = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    ra = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     if 8 > wb.length() {
         return nothing
@@ -1465,121 +1421,122 @@ pri func decoder.normal_hfilter_mb_16_x86_sse42!(workbuf: slice base.u8, q0_off:
     args.workbuf = args.workbuf[(args.q0_off - 4) ..]
 
     // Rows 0,1
-    if 8 <= args.workbuf.length() {
-        f0.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f0.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f0._mm_unpackhi_epi64(b: f0)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 2,3
-    if 8 <= args.workbuf.length() {
-        f1.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f1.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f1._mm_unpackhi_epi64(b: f1)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 4,5
-    if 8 <= args.workbuf.length() {
-        f2.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f2.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f2._mm_unpackhi_epi64(b: f2)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 6,7
-    if 8 <= args.workbuf.length() {
-        f3.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f3.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f3._mm_unpackhi_epi64(b: f3)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 8,9
-    if 8 <= args.workbuf.length() {
-        f4.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f4.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f4._mm_unpackhi_epi64(b: f4)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 10,11
-    if 8 <= args.workbuf.length() {
-        f5.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f5.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f5._mm_unpackhi_epi64(b: f5)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 12,13
-    if 8 <= args.workbuf.length() {
-        f6.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f6.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f6._mm_unpackhi_epi64(b: f6)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 14,15
-    if 8 <= args.workbuf.length() {
-        f7.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f7.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
     ra = f7._mm_unpackhi_epi64(b: f7)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
+    if 8 > args.workbuf.length() {
+        return nothing
     }
+    ra.store_slice64!(a: args.workbuf[.. 8])
 }
 
 // VP8 normal loop filter (filter6) for 8-row U/V vertical MB edges, SSE4.2.
@@ -1655,6 +1612,10 @@ pri func decoder.normal_hfilter_mb_8_x86_sse42!(workbuf: slice base.u8, q0_off: 
     var q0_adj    : base.x86_m128i
 
     stride = this.uv_stride as base.u64
+    if stride < 8 {
+        return nothing
+    }
+    assert 8 <= stride via "a <= b: b >= a"()
 
     // Bounds: need 4 bytes before q0 for p3 column.
     if args.q0_off < 4 {
@@ -1670,70 +1631,56 @@ pri func decoder.normal_hfilter_mb_8_x86_sse42!(workbuf: slice base.u8, q0_off: 
     // Each pair of rows is loaded and interleaved via unpacklo_epi8.
 
     // Rows 0,1
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f0 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 2,3
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f1 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 4,5
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f2 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 6,7
-    if 8 > wb.length() {
-        return nothing
-    }
-    ra = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    ra = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     if 8 > wb.length() {
         return nothing
@@ -1899,61 +1846,62 @@ pri func decoder.normal_hfilter_mb_8_x86_sse42!(workbuf: slice base.u8, q0_off: 
     args.workbuf = args.workbuf[(args.q0_off - 4) ..]
 
     // Rows 0,1
-    if 8 <= args.workbuf.length() {
-        f0.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f0.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f0._mm_unpackhi_epi64(b: f0)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 2,3
-    if 8 <= args.workbuf.length() {
-        f1.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f1.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f1._mm_unpackhi_epi64(b: f1)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 4,5
-    if 8 <= args.workbuf.length() {
-        f2.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f2.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f2._mm_unpackhi_epi64(b: f2)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 6,7
-    if 8 <= args.workbuf.length() {
-        f3.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f3.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
     ra = f3._mm_unpackhi_epi64(b: f3)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
+    if 8 > args.workbuf.length() {
+        return nothing
     }
+    ra.store_slice64!(a: args.workbuf[.. 8])
 }
 
 // VP8 normal loop filter (filter4) for 16-row Y vertical inner edges, SSE4.2.
@@ -2022,6 +1970,10 @@ pri func decoder.normal_hfilter_inner_16_x86_sse42!(workbuf: slice base.u8, q0_o
     var hi        : base.x86_m128i
 
     stride = this.y_stride as base.u64
+    if stride < 8 {
+        return nothing
+    }
+    assert 8 <= stride via "a <= b: b >= a"()
 
     if args.q0_off < 4 {
         return nothing
@@ -2033,148 +1985,119 @@ pri func decoder.normal_hfilter_inner_16_x86_sse42!(workbuf: slice base.u8, q0_o
     wb = wb[(args.q0_off - 4) ..]
 
     // ==== Load 16 rows of 8 bytes + forward transpose phase 1 ====
+    // With stride >= 8, the stride check subsumes the 8-byte load check.
 
     // Rows 0,1
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f0 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 2,3
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f1 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 4,5
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f2 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 6,7
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f3 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 8,9
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f4 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 10,11
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f5 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 12,13
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f6 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 14,15
-    if 8 > wb.length() {
-        return nothing
-    }
-    ra = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    ra = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     if 8 > wb.length() {
         return nothing
@@ -2331,127 +2254,129 @@ pri func decoder.normal_hfilter_inner_16_x86_sse42!(workbuf: slice base.u8, q0_o
     f7 = g5._mm_unpackhi_epi32(b: g7)
 
     // ==== Store 16 rows ====
+    // Same stride >= 8 optimization as load phase.
     if (args.q0_off - 4) > args.workbuf.length() {
         return nothing
     }
     args.workbuf = args.workbuf[(args.q0_off - 4) ..]
 
     // Rows 0,1
-    if 8 <= args.workbuf.length() {
-        f0.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f0.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f0._mm_unpackhi_epi64(b: f0)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 2,3
-    if 8 <= args.workbuf.length() {
-        f1.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f1.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f1._mm_unpackhi_epi64(b: f1)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 4,5
-    if 8 <= args.workbuf.length() {
-        f2.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f2.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f2._mm_unpackhi_epi64(b: f2)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 6,7
-    if 8 <= args.workbuf.length() {
-        f3.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f3.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f3._mm_unpackhi_epi64(b: f3)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 8,9
-    if 8 <= args.workbuf.length() {
-        f4.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f4.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f4._mm_unpackhi_epi64(b: f4)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 10,11
-    if 8 <= args.workbuf.length() {
-        f5.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f5.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f5._mm_unpackhi_epi64(b: f5)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 12,13
-    if 8 <= args.workbuf.length() {
-        f6.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f6.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f6._mm_unpackhi_epi64(b: f6)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
     // Rows 14,15
-    if 8 <= args.workbuf.length() {
-        f7.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f7.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
     ra = f7._mm_unpackhi_epi64(b: f7)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
+    if 8 > args.workbuf.length() {
+        return nothing
     }
+    ra.store_slice64!(a: args.workbuf[.. 8])
 }
 
 // VP8 normal loop filter (filter4) for 8-row U/V vertical inner edges, SSE4.2.
@@ -2511,6 +2436,10 @@ pri func decoder.normal_hfilter_inner_8_x86_sse42!(workbuf: slice base.u8, q0_of
     var hi        : base.x86_m128i
 
     stride = this.uv_stride as base.u64
+    if stride < 8 {
+        return nothing
+    }
+    assert 8 <= stride via "a <= b: b >= a"()
 
     if args.q0_off < 4 {
         return nothing
@@ -2524,70 +2453,56 @@ pri func decoder.normal_hfilter_inner_8_x86_sse42!(workbuf: slice base.u8, q0_of
     // ==== Load 8 rows + forward transpose ====
 
     // Rows 0,1
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f0 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 2,3
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f1 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 4,5
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = util.make_m128i_slice64(a: wb[.. 8])
-    if stride > wb.length() {
-        return nothing
-    }
     wb = wb[stride ..]
-    if 8 > wb.length() {
-        return nothing
-    }
-    rb = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    rb = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     f2 = ra._mm_unpacklo_epi8(b: rb)
 
     // Rows 6,7
-    if 8 > wb.length() {
-        return nothing
-    }
-    ra = util.make_m128i_slice64(a: wb[.. 8])
     if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
+    ra = util.make_m128i_slice64(a: wb[.. 8])
     wb = wb[stride ..]
     if 8 > wb.length() {
         return nothing
@@ -2719,58 +2634,59 @@ pri func decoder.normal_hfilter_inner_8_x86_sse42!(workbuf: slice base.u8, q0_of
     }
     args.workbuf = args.workbuf[(args.q0_off - 4) ..]
 
-    if 8 <= args.workbuf.length() {
-        f0.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f0.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f0._mm_unpackhi_epi64(b: f0)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 8 <= args.workbuf.length() {
-        f1.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f1.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f1._mm_unpackhi_epi64(b: f1)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 8 <= args.workbuf.length() {
-        f2.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f2.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
+    if stride > args.workbuf.length() {
+        return nothing
     }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
     ra = f2._mm_unpackhi_epi64(b: f2)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
-    }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    ra.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 8 <= args.workbuf.length() {
-        f3.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if stride <= args.workbuf.length() {
-        args.workbuf = args.workbuf[stride ..]
-    }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    f3.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
     ra = f3._mm_unpackhi_epi64(b: f3)
-    if 8 <= args.workbuf.length() {
-        ra.store_slice64!(a: args.workbuf[.. 8])
+    if 8 > args.workbuf.length() {
+        return nothing
     }
+    ra.store_slice64!(a: args.workbuf[.. 8])
 }
 
 // VP8 normal loop filter (filter4) for 8-pixel U/V horizontal inner edges, SSE4.2.
@@ -2782,8 +2698,9 @@ pri func decoder.normal_vfilter_inner_8_x86_sse42!(workbuf: slice base.u8, q0_of
         level: base.u32, ilevel: base.u32, hlevel: base.u32),
         choose cpu_arch >= x86_sse42,
 {
-    var util : base.x86_sse42_utility
-    var wb   : slice base.u8
+    var util   : base.x86_sse42_utility
+    var wb     : slice base.u8
+    var stride : base.u64
 
     var p3        : base.x86_m128i
     var p2        : base.x86_m128i
@@ -2814,79 +2731,71 @@ pri func decoder.normal_vfilter_inner_8_x86_sse42!(workbuf: slice base.u8, q0_of
     var lo        : base.x86_m128i
     var hi        : base.x86_m128i
 
-    if args.q0_off < (4 * (this.uv_stride as base.u64)) {
+    stride = this.uv_stride as base.u64
+    if stride < 8 {
+        return nothing
+    }
+    assert 8 <= stride via "a <= b: b >= a"()
+
+    if args.q0_off < (4 * stride) {
         return nothing
     }
     wb = args.workbuf
-    if (args.q0_off - (4 * (this.uv_stride as base.u64))) <= wb.length() {
-        wb = wb[args.q0_off - (4 * (this.uv_stride as base.u64)) ..]
+    if (args.q0_off - (4 * stride)) <= wb.length() {
+        wb = wb[args.q0_off - (4 * stride) ..]
     } else {
         return nothing
     }
 
     // Load 8 rows using 8-byte loads.
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p3 = util.make_m128i_slice64(a: wb[.. 8])
-    if (this.uv_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.uv_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p2 = util.make_m128i_slice64(a: wb[.. 8])
-    if (this.uv_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.uv_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p1 = util.make_m128i_slice64(a: wb[.. 8])
-    if (this.uv_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.uv_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     p0 = util.make_m128i_slice64(a: wb[.. 8])
-    if (this.uv_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.uv_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     q0 = util.make_m128i_slice64(a: wb[.. 8])
-    if (this.uv_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.uv_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     q1 = util.make_m128i_slice64(a: wb[.. 8])
-    if (this.uv_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.uv_stride as base.u64) ..]
+    wb = wb[stride ..]
 
-    if 8 > wb.length() {
+    if stride > wb.length() {
         return nothing
     }
+    assert 8 <= wb.length() via "a <= b: a <= c; c <= b"(c: stride)
     q2 = util.make_m128i_slice64(a: wb[.. 8])
-    if (this.uv_stride as base.u64) > wb.length() {
-        return nothing
-    }
-    wb = wb[(this.uv_stride as base.u64) ..]
+    wb = wb[stride ..]
 
     if 8 > wb.length() {
         return nothing
@@ -2976,37 +2885,38 @@ pri func decoder.normal_vfilter_inner_8_x86_sse42!(workbuf: slice base.u8, q0_of
     q1 = q1._mm_xor_si128(b: sign_bit)
 
     // Store p1, p0, q0, q1 using 8-byte stores.
-    if args.q0_off < (2 * (this.uv_stride as base.u64)) {
+    if args.q0_off < (2 * stride) {
         return nothing
     }
-    if (args.q0_off - (2 * (this.uv_stride as base.u64))) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[args.q0_off - (2 * (this.uv_stride as base.u64)) ..]
+    if (args.q0_off - (2 * stride)) <= args.workbuf.length() {
+        args.workbuf = args.workbuf[args.q0_off - (2 * stride) ..]
     } else {
         return nothing
     }
 
-    if 8 <= args.workbuf.length() {
-        p1.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.uv_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.uv_stride as base.u64) ..]
-    }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    p1.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 8 <= args.workbuf.length() {
-        p0.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.uv_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.uv_stride as base.u64) ..]
-    }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    p0.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 8 <= args.workbuf.length() {
-        q0.store_slice64!(a: args.workbuf[.. 8])
+    if stride > args.workbuf.length() {
+        return nothing
     }
-    if (this.uv_stride as base.u64) <= args.workbuf.length() {
-        args.workbuf = args.workbuf[(this.uv_stride as base.u64) ..]
-    }
+    assert 8 <= args.workbuf.length() via "a <= b: a <= c; c <= b"(c: stride)
+    q0.store_slice64!(a: args.workbuf[.. 8])
+    args.workbuf = args.workbuf[stride ..]
 
-    if 8 <= args.workbuf.length() {
-        q1.store_slice64!(a: args.workbuf[.. 8])
+    if 8 > args.workbuf.length() {
+        return nothing
     }
+    q1.store_slice64!(a: args.workbuf[.. 8])
 }

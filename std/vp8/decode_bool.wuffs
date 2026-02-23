@@ -28,7 +28,8 @@ pri func decoder.bool_init!() {
     this.bool_bits = 0
 
     // Pre-load bytes into the wide accumulator.
-    while (this.bool_bits <= 48) and (this.bool_ri < this.bool_wi) and (this.bool_ri < 0x1000) {
+    while (this.bool_bits <= 48) and (this.bool_ri < this.bool_wi) {
+        assert this.bool_ri < 0x1000 via "a < b: a < c; c <= b"(c: this.bool_wi)
         bb = this.bool_buffer[this.bool_ri] as base.u64
         this.bool_ri += 1
         this.bool_value = (this.bool_value ~mod<< 8) | bb
@@ -51,7 +52,8 @@ pri func decoder.bool_read_bool!(prob: base.u8) base.u32[..= 1] {
 
     // Load bytes when bit position gets low.
     if this.bool_bits < 16 {
-        while (this.bool_bits <= 48) and (this.bool_ri < this.bool_wi) and (this.bool_ri < 0x1000) {
+        while (this.bool_bits <= 48) and (this.bool_ri < this.bool_wi) {
+            assert this.bool_ri < 0x1000 via "a < b: a < c; c <= b"(c: this.bool_wi)
             bb = this.bool_buffer[this.bool_ri] as base.u64
             this.bool_ri += 1
             this.bool_value = (this.bool_value ~mod<< 8) | bb
@@ -160,7 +162,8 @@ pri func decoder.p1_read_bool!(prob: base.u8) base.u32[..= 1] {
 
     // Load bytes when bit position gets low.
     if this.p1_bits < 16 {
-        while (this.p1_bits <= 48) and (this.p1_ri < this.p1_wi) and (this.p1_ri < 0x1000) {
+        while (this.p1_bits <= 48) and (this.p1_ri < this.p1_wi) {
+            assert this.p1_ri < 0x1000 via "a < b: a < c; c <= b"(c: this.p1_wi)
             bb = this.p1_buffer[this.p1_ri] as base.u64
             this.p1_ri += 1
             this.p1_value = (this.p1_value ~mod<< 8) | bb
@@ -214,7 +217,8 @@ pri func decoder.p1_read_sign!() base.u32[..= 1] {
             this.p1_ri += 4
             this.p1_bits ~mod+= 32
         } else {
-            while (this.p1_bits <= 48) and (this.p1_ri < this.p1_wi) and (this.p1_ri < 0x1000) {
+            while (this.p1_bits <= 48) and (this.p1_ri < this.p1_wi) {
+                assert this.p1_ri < 0x1000 via "a < b: a < c; c <= b"(c: this.p1_wi)
                 bb = this.p1_buffer[this.p1_ri] as base.u64
                 this.p1_ri += 1
                 this.p1_value = (this.p1_value ~mod<< 8) | bb

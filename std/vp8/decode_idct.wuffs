@@ -251,6 +251,31 @@ pri func decoder.idct_dc_add!(dst: slice base.u8, stride: base.u32, coeff_offset
     }
 }
 
+// idct_add_pair! performs 4x4 inverse DCT on two adjacent blocks and adds
+// the results to prediction. Block A at dst[0..], Block B at dst[4..].
+// The scalar default just calls idct_add for each block separately.
+pri func decoder.idct_add_pair!(dst: slice base.u8, stride: base.u32,
+        coeff_offset_a: base.u32[..= 384], coeff_offset_b: base.u32[..= 384]),
+        choosy,
+{
+    this.idct_add!(dst: args.dst, stride: args.stride, coeff_offset: args.coeff_offset_a)
+    if 4 <= args.dst.length() {
+        this.idct_add!(dst: args.dst[4 ..], stride: args.stride, coeff_offset: args.coeff_offset_b)
+    }
+}
+
+// idct_dc_add_pair! adds DC-only offsets to two adjacent 4x4 blocks.
+// Block A at dst[0..], Block B at dst[4..].
+pri func decoder.idct_dc_add_pair!(dst: slice base.u8, stride: base.u32,
+        coeff_offset_a: base.u32[..= 384], coeff_offset_b: base.u32[..= 384]),
+        choosy,
+{
+    this.idct_dc_add!(dst: args.dst, stride: args.stride, coeff_offset: args.coeff_offset_a)
+    if 4 <= args.dst.length() {
+        this.idct_dc_add!(dst: args.dst[4 ..], stride: args.stride, coeff_offset: args.coeff_offset_b)
+    }
+}
+
 // wht! performs a 4x4 Walsh-Hadamard Transform on the Y2 (DC) block.
 // Input: 16 DC coefficients from mb_coeffs[384..400].
 // Output: distributes the transformed DC values back to the 16 Y blocks.

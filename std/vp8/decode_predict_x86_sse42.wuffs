@@ -19,20 +19,14 @@ pri func decoder.predict_16x16_x86_sse42!(workbuf: slice base.u8, mode: base.u8[
     var util : base.x86_sse42_utility
 
     // Reference pixel arrays (pre-loaded before reslicing workbuf).
-    var above_arr : array[16] base.u8
     var left_arr  : array[16] base.u8
     var tl        : base.u8
+    var s         : slice base.u8
 
     // SSE registers.
     var zero     : base.x86_m128i
     var above    : base.x86_m128i
-    var above_lo : base.x86_m128i
-    var above_hi : base.x86_m128i
-    var tl16     : base.x86_m128i
-    var left16   : base.x86_m128i
     var diff     : base.x86_m128i
-    var sum_lo   : base.x86_m128i
-    var sum_hi   : base.x86_m128i
     var result   : base.x86_m128i
     var sad      : base.x86_m128i
     var tmp      : base.x86_m128i
@@ -40,7 +34,6 @@ pri func decoder.predict_16x16_x86_sse42!(workbuf: slice base.u8, mode: base.u8[
     var y_off : base.u64
     var idx   : base.u64
     var r     : base.u32
-    var c     : base.u32
     var sum   : base.u32
     var count : base.u32
     var dc    : base.u8
@@ -51,26 +44,17 @@ pri func decoder.predict_16x16_x86_sse42!(workbuf: slice base.u8, mode: base.u8[
     y_off = (this.mb_y as base.u64) * 16 * (this.y_stride as base.u64)
     y_off ~mod+= ((this.mb_x as base.u64) * 16)
 
-    // Pre-load above row (16 bytes).
+    // Load above row directly into SSE register (16 contiguous bytes).
     if (this.mb_y > 0) and (y_off >= (this.y_stride as base.u64)) {
-        c = 0
-        while c < 16,
-                inv c <= 16,
-        {
-            idx = (y_off ~mod- (this.y_stride as base.u64)) ~mod+ (c as base.u64)
-            if idx < args.workbuf.length() {
-                above_arr[c] = args.workbuf[idx]
+        idx = y_off ~mod- (this.y_stride as base.u64)
+        if idx < args.workbuf.length() {
+            s = args.workbuf[idx ..]
+            if s.length() >= 16 {
+                above = util.make_m128i_slice128(a: s[.. 16])
             }
-            c += 1
         }
     } else {
-        c = 0
-        while c < 16,
-                inv c <= 16,
-        {
-            above_arr[c] = 127
-            c += 1
-        }
+        above = util.make_m128i_repeat_u8(a: 127)
     }
 
     // Pre-load left column (16 bytes, stride apart).
@@ -99,9 +83,6 @@ pri func decoder.predict_16x16_x86_sse42!(workbuf: slice base.u8, mode: base.u8[
     } else if (this.mb_x == 0) and (this.mb_y > 0) {
         tl = 129
     }
-
-    // Load above row into SSE register.
-    above = util.make_m128i_slice128(a: above_arr[.. 16])
 
     // Reslice workbuf to block start for efficient output.
     if y_off <= args.workbuf.length() {
@@ -176,20 +157,18 @@ pri func decoder.predict_16x16_x86_sse42!(workbuf: slice base.u8, mode: base.u8[
 
     } else {
         // TM prediction: pred[r][c] = clamp(above[c] + left[r] - tl).
-        // Widen above to i16 for arithmetic.
-        above_lo = above._mm_unpacklo_epi8(b: zero)  // above[0..8] as i16
-        above_hi = above._mm_unpackhi_epi8(b: zero)  // above[8..16] as i16
-        tl16 = util.make_m128i_repeat_u16(a: tl as base.u16)
-
+        // Use saturating unsigned byte arithmetic (same approach as ARM NEON):
+        //   if left[r] >= tl: result = adds_epu8(above, left[r] - tl)
+        //   if left[r] <  tl: result = subs_epu8(above, tl - left[r])
         r = 0
         while r < 16 {
-            // diff = left[r] - tl, broadcast to all lanes.
-            left16 = util.make_m128i_repeat_u16(a: left_arr[r] as base.u16)
-            diff = left16._mm_sub_epi16(b: tl16)
-            // above[c] + (left[r] - tl), clamp to [0, 255].
-            sum_lo = above_lo._mm_add_epi16(b: diff)
-            sum_hi = above_hi._mm_add_epi16(b: diff)
-            result = sum_lo._mm_packus_epi16(b: sum_hi)
+            if left_arr[r] >= tl {
+                diff = util.make_m128i_repeat_u8(a: left_arr[r] ~mod- tl)
+                result = above._mm_adds_epu8(b: diff)
+            } else {
+                diff = util.make_m128i_repeat_u8(a: tl ~mod- left_arr[r])
+                result = above._mm_subs_epu8(b: diff)
+            }
             if 16 <= args.workbuf.length() {
                 result.store_slice128!(a: args.workbuf[.. 16])
             }
@@ -212,25 +191,20 @@ pri func decoder.predict_8x8_x86_sse42!(workbuf: slice base.u8, mode: base.u8[..
     var util : base.x86_sse42_utility
 
     // Reference pixel arrays (pre-loaded before reslicing workbuf).
-    var above_arr : array[8] base.u8
     var left_arr  : array[8] base.u8
     var tl        : base.u8
+    var s         : slice base.u8
 
     // SSE registers.
     var zero     : base.x86_m128i
     var above    : base.x86_m128i
-    var above_lo : base.x86_m128i
-    var tl16     : base.x86_m128i
-    var left16   : base.x86_m128i
     var diff     : base.x86_m128i
-    var sum_lo   : base.x86_m128i
     var result   : base.x86_m128i
     var sad      : base.x86_m128i
 
     var uv_off : base.u64
     var idx    : base.u64
     var r      : base.u32
-    var c      : base.u32
     var sum    : base.u32
     var count  : base.u32
     var dc     : base.u8
@@ -241,26 +215,17 @@ pri func decoder.predict_8x8_x86_sse42!(workbuf: slice base.u8, mode: base.u8[..
     uv_off = args.plane_offset ~mod+ ((this.mb_y as base.u64) * 8 * (this.uv_stride as base.u64))
     uv_off ~mod+= ((this.mb_x as base.u64) * 8)
 
-    // Pre-load above row (8 bytes).
+    // Load above row directly into SSE register (8 contiguous bytes).
     if (this.mb_y > 0) and (uv_off >= (this.uv_stride as base.u64)) {
-        c = 0
-        while c < 8,
-                inv c <= 8,
-        {
-            idx = (uv_off ~mod- (this.uv_stride as base.u64)) ~mod+ (c as base.u64)
-            if idx < args.workbuf.length() {
-                above_arr[c] = args.workbuf[idx]
+        idx = uv_off ~mod- (this.uv_stride as base.u64)
+        if idx < args.workbuf.length() {
+            s = args.workbuf[idx ..]
+            if s.length() >= 8 {
+                above = util.make_m128i_slice64(a: s[.. 8])
             }
-            c += 1
         }
     } else {
-        c = 0
-        while c < 8,
-                inv c <= 8,
-        {
-            above_arr[c] = 127
-            c += 1
-        }
+        above = util.make_m128i_repeat_u8(a: 127)
     }
 
     // Pre-load left column (8 bytes, uv_stride apart).
@@ -289,9 +254,6 @@ pri func decoder.predict_8x8_x86_sse42!(workbuf: slice base.u8, mode: base.u8[..
     } else if (this.mb_x == 0) and (this.mb_y > 0) {
         tl = 129
     }
-
-    // Load above row into SSE register (lower 64 bits).
-    above = util.make_m128i_slice64(a: above_arr[.. 8])
 
     // Reslice workbuf to block start for efficient output.
     if uv_off <= args.workbuf.length() {
@@ -363,18 +325,18 @@ pri func decoder.predict_8x8_x86_sse42!(workbuf: slice base.u8, mode: base.u8[..
 
     } else {
         // TM prediction: pred[r][c] = clamp(above[c] + left[r] - tl).
-        // Widen above to i16 for signed arithmetic.
-        above_lo = above._mm_unpacklo_epi8(b: zero)  // above[0..8] as i16
-        tl16 = util.make_m128i_repeat_u16(a: tl as base.u16)
-
+        // Use saturating unsigned byte arithmetic (same approach as ARM NEON):
+        //   if left[r] >= tl: result = adds_epu8(above, left[r] - tl)
+        //   if left[r] <  tl: result = subs_epu8(above, tl - left[r])
         r = 0
         while r < 8 {
-            // diff = left[r] - tl, broadcast to all lanes.
-            left16 = util.make_m128i_repeat_u16(a: left_arr[r] as base.u16)
-            diff = left16._mm_sub_epi16(b: tl16)
-            // above[c] + (left[r] - tl), clamp to [0, 255].
-            sum_lo = above_lo._mm_add_epi16(b: diff)
-            result = sum_lo._mm_packus_epi16(b: zero)
+            if left_arr[r] >= tl {
+                diff = util.make_m128i_repeat_u8(a: left_arr[r] ~mod- tl)
+                result = above._mm_adds_epu8(b: diff)
+            } else {
+                diff = util.make_m128i_repeat_u8(a: tl ~mod- left_arr[r])
+                result = above._mm_subs_epu8(b: diff)
+            }
             if 8 <= args.workbuf.length() {
                 result.store_slice64!(a: args.workbuf[.. 8])
             }

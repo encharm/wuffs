@@ -288,6 +288,68 @@ pri func decoder.normal_vfilter_inner_8!(workbuf: slice base.u8, q0_off: base.u6
     }
 }
 
+// ---- Combined U+V filter functions (scalar defaults) ----
+
+// normal_vfilter_mb_uv! filters both U and V planes at a horizontal MB boundary
+// edge using the normal filter6. Combines two normal_vfilter_mb_8 calls.
+pri func decoder.normal_vfilter_mb_uv!(workbuf: slice base.u8,
+        u_off: base.u64, v_off: base.u64,
+        level: base.u32, ilevel: base.u32, hlevel: base.u32),
+        choosy,
+{
+    this.normal_vfilter_mb_8!(workbuf: args.workbuf,
+            q0_off: args.u_off,
+            level: args.level, ilevel: args.ilevel, hlevel: args.hlevel)
+    this.normal_vfilter_mb_8!(workbuf: args.workbuf,
+            q0_off: args.v_off,
+            level: args.level, ilevel: args.ilevel, hlevel: args.hlevel)
+}
+
+// normal_hfilter_mb_uv! filters both U and V planes at a vertical MB boundary
+// edge using the normal filter6. Combines two normal_hfilter_mb_8 calls.
+pri func decoder.normal_hfilter_mb_uv!(workbuf: slice base.u8,
+        u_off: base.u64, v_off: base.u64,
+        level: base.u32, ilevel: base.u32, hlevel: base.u32),
+        choosy,
+{
+    this.normal_hfilter_mb_8!(workbuf: args.workbuf,
+            q0_off: args.u_off,
+            level: args.level, ilevel: args.ilevel, hlevel: args.hlevel)
+    this.normal_hfilter_mb_8!(workbuf: args.workbuf,
+            q0_off: args.v_off,
+            level: args.level, ilevel: args.ilevel, hlevel: args.hlevel)
+}
+
+// normal_vfilter_inner_uv! filters both U and V planes at a horizontal inner
+// sub-block edge using the normal filter4. Combines two normal_vfilter_inner_8 calls.
+pri func decoder.normal_vfilter_inner_uv!(workbuf: slice base.u8,
+        u_off: base.u64, v_off: base.u64,
+        level: base.u32, ilevel: base.u32, hlevel: base.u32),
+        choosy,
+{
+    this.normal_vfilter_inner_8!(workbuf: args.workbuf,
+            q0_off: args.u_off,
+            level: args.level, ilevel: args.ilevel, hlevel: args.hlevel)
+    this.normal_vfilter_inner_8!(workbuf: args.workbuf,
+            q0_off: args.v_off,
+            level: args.level, ilevel: args.ilevel, hlevel: args.hlevel)
+}
+
+// normal_hfilter_inner_uv! filters both U and V planes at a vertical inner
+// sub-block edge using the normal filter4. Combines two normal_hfilter_inner_8 calls.
+pri func decoder.normal_hfilter_inner_uv!(workbuf: slice base.u8,
+        u_off: base.u64, v_off: base.u64,
+        level: base.u32, ilevel: base.u32, hlevel: base.u32),
+        choosy,
+{
+    this.normal_hfilter_inner_8!(workbuf: args.workbuf,
+            q0_off: args.u_off,
+            level: args.level, ilevel: args.ilevel, hlevel: args.hlevel)
+    this.normal_hfilter_inner_8!(workbuf: args.workbuf,
+            q0_off: args.v_off,
+            level: args.level, ilevel: args.ilevel, hlevel: args.hlevel)
+}
+
 // filter2! filters one pixel position along an edge using the simple filter.
 // Implements Go's filter2: adjust p0/q0 based on the 4-pixel neighborhood.
 // q0_idx is the index of q0 (first pixel inside the edge).
@@ -516,11 +578,8 @@ pri func decoder.apply_normal_filter_row!(workbuf: slice base.u8, mby: base.u32)
             this.normal_hfilter_mb_16!(workbuf: args.workbuf,
                     q0_off: y_off,
                     level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel)
-            this.normal_hfilter_mb_8!(workbuf: args.workbuf,
-                    q0_off: u_off,
-                    level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel)
-            this.normal_hfilter_mb_8!(workbuf: args.workbuf,
-                    q0_off: v_off,
+            this.normal_hfilter_mb_uv!(workbuf: args.workbuf,
+                    u_off: u_off, v_off: v_off,
                     level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel)
         }
 
@@ -534,11 +593,8 @@ pri func decoder.apply_normal_filter_row!(workbuf: slice base.u8, mby: base.u32)
             this.normal_hfilter_inner_16!(workbuf: args.workbuf,
                     q0_off: y_off ~mod+ 12,
                     level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
-            this.normal_hfilter_inner_8!(workbuf: args.workbuf,
-                    q0_off: u_off ~mod+ 4,
-                    level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
-            this.normal_hfilter_inner_8!(workbuf: args.workbuf,
-                    q0_off: v_off ~mod+ 4,
+            this.normal_hfilter_inner_uv!(workbuf: args.workbuf,
+                    u_off: u_off ~mod+ 4, v_off: v_off ~mod+ 4,
                     level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
         }
 
@@ -548,11 +604,8 @@ pri func decoder.apply_normal_filter_row!(workbuf: slice base.u8, mby: base.u32)
             this.normal_vfilter_mb_16!(workbuf: args.workbuf,
                     q0_off: y_off,
                     level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel)
-            this.normal_vfilter_mb_8!(workbuf: args.workbuf,
-                    q0_off: u_off,
-                    level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel)
-            this.normal_vfilter_mb_8!(workbuf: args.workbuf,
-                    q0_off: v_off,
+            this.normal_vfilter_mb_uv!(workbuf: args.workbuf,
+                    u_off: u_off, v_off: v_off,
                     level: f_level ~mod+ 4, ilevel: f_ilevel, hlevel: f_hlevel)
         }
 
@@ -566,11 +619,9 @@ pri func decoder.apply_normal_filter_row!(workbuf: slice base.u8, mby: base.u32)
             this.normal_vfilter_inner_16!(workbuf: args.workbuf,
                     q0_off: y_off ~mod+ (12 * (this.y_stride as base.u64)),
                     level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
-            this.normal_vfilter_inner_8!(workbuf: args.workbuf,
-                    q0_off: u_off ~mod+ (4 * (this.uv_stride as base.u64)),
-                    level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
-            this.normal_vfilter_inner_8!(workbuf: args.workbuf,
-                    q0_off: v_off ~mod+ (4 * (this.uv_stride as base.u64)),
+            this.normal_vfilter_inner_uv!(workbuf: args.workbuf,
+                    u_off: u_off ~mod+ (4 * (this.uv_stride as base.u64)),
+                    v_off: v_off ~mod+ (4 * (this.uv_stride as base.u64)),
                     level: f_level, ilevel: f_ilevel, hlevel: f_hlevel)
         }
 
