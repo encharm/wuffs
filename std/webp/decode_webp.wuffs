@@ -24,7 +24,9 @@ pub status "#unsupported transform after color indexing transform"
 pub status "#unsupported WebP file"
 
 pri status "#internal error: inconsistent Huffman code"
+pri status "#internal error: inconsistent Huffman decoder state"
 pri status "#internal error: inconsistent dst buffer"
+pri status "#internal error: inconsistent I/O"
 pri status "#internal error: inconsistent n_bits"
 
 pub const DECODER_WORKBUF_LEN_MAX_INCL_WORST_CASE : base.u64 = 0
@@ -58,10 +60,17 @@ pub struct decoder? implements base.image_decoder(
         bits   : base.u32,
         n_bits : base.u32[..= 31],
 
+        // Pixel decode position, shared between fast and slow paths.
+        pix_p    : base.u64,
+        pix_x    : base.u32,
+        pix_y    : base.u32,
+        pix_cc_p : base.u64,
+
         seen_transform           : array[4] base.bool,
         transform_type           : array[4] base.u8[..= 3],
         transform_tile_size_log2 : array[4] base.u8[..= 9],
         n_transforms             : base.u32[..= 4],
+        fuse_subtract_green      : base.bool,
 
         color_cache_bits         : base.u32[..= 11],
         overall_color_cache_bits : base.u32[..= 11],
@@ -70,6 +79,7 @@ pub struct decoder? implements base.image_decoder(
 
         ht_n_symbols              : base.u32[..= 2328],
         ht_code_lengths_remaining : base.u32,
+        ht_next_top               : base.u32[..= 4096],
 
         color_indexing_palette_size : base.u32[..= 256],
         color_indexing_width        : base.u32[..= 0x4000],
@@ -117,34 +127,33 @@ pub struct decoder? implements base.image_decoder(
         //  - 1SSS_SSSS_SSSS_SSSS   Leaf node (symbol is SSS, it may be zero).
         code_lengths_huffman_nodes : array[37] base.u16,
 
-        // A Huffman group has five (5) Huffman trees.
+        // Two-level Huffman lookup tables. A Huffman group has five (5)
+        // Huffman trees packed sequentially into one 4096-entry array:
+        //   (0) Green + back-ref length + color cache
+        //   (1) Red
+        //   (2) Blue
+        //   (3) Alpha
+        //   (4) Back-ref distance
         //
-        // Start  .. End     Size
-        // 0x064C .. 0x187B  0x122F  (1) Green, back-ref length, color cache.
-        // 0x0000 .. 0x01FF  0x01FF  (2) Red.
-        // 0x01FF .. 0x03FE  0x01FF  (3) Blue.
-        // 0x03FE .. 0x05FD  0x01FF  (4) Alpha.
-        // 0x05FD .. 0x064C  0x004F  (5) Back-ref distance.
+        // Each base.u32 entry is either:
+        //  - Leaf:     0x8000_0000 | (symbol << 8) | n_bits
+        //  - Redirect: 0x1000_0008 | (offset << 8) | (extra_bits << 4)
         //
-        // The Green+etc tree is last (in terms of start offset) because it's
-        // by far the largest (worst case) and its color cache component has
-        // variable length.
+        // Primary table: 8-bit index (256 entries per tree).
+        // Secondary tables: variable size, for codes > 8 bits.
         //
-        // 0x122F = 4655 = ((2 * 2328) - 1) and the same 2328 turns up in func
-        // decoder.decode_huffman_tree.
-        //
-        // 2328 is (256 + 24 + 2048), combining 256 Green values, 24 back-ref
-        // lengths and up to 2048 = (1 << 11) color cache keys.
-        //
-        // 0x01FF = 511 = ((2 * 256) - 1) is for 256 Red (Blue, Alpha) values.
-        //
-        // 0x004F = 79 = ((2 * 40) - 1) is for 40 back-ref distances.
-        //
-        // 0x187B = 6267 and (0x187B * sizeof(u16)) = 12534. Overall, this
-        // field takes 0x30_F600 = 3_208704 bytes of memory.
-        //
-        // The base.u16's bits are the same as for code_lengths_huffman_nodes.
-        huffman_nodes : array[256] array[0x187B] base.u16,
+        // huffman_table_base_offsets[hg][ht] is the starting index of
+        // tree ht's primary table within huffman_tables[hg].
+        huffman_tables : array[256] array[4096] base.u32,
+        huffman_table_base_offsets : array[256] array[5] base.u16,
+
+        // Per Huffman group: 0=normal, 1=trivial_literal (R/B/A are
+        // single-symbol), 2=trivial_code (all 4 are single-symbol).
+        hg_trivial : array[256] base.u8,
+        // Pre-computed (alpha << 24) | (red << 16) | blue for trivial groups.
+        // For trivial_code, also includes (green << 8).
+        hg_literal_arb : array[256] base.u32,
+
 )
 
 pub func decoder.get_quirk(key: base.u32) base.u64 {
@@ -510,10 +519,15 @@ pri func decoder.do_decode_frame_vp8x?(dst: ptr base.pixel_buffer, src: base.io_
                 this.workbuf_offset_for_transform[3] = this.workbuf_offset_for_transform[2] +
                         (4 * ((this.width + 3) >> 2) * ((this.height + 3) >> 2))
 
-                // Decode VP8L pixels.
+                // Decode VP8L pixels. Use io_limit to prevent reading
+                // past the ALPH chunk into the following VP8 chunk.
                 this.call_sequence = 0x40
                 while true {
-                    status =? this.do_decode_frame?(dst: args.dst, src: args.src, blend: args.blend, workbuf: args.workbuf, opts: args.opts)
+                    io_limit (io: args.src, limit: alph_length as base.u64) {
+                        r_mark = args.src.mark()
+                        status =? this.do_decode_frame?(dst: args.dst, src: args.src, blend: args.blend, workbuf: args.workbuf, opts: args.opts)
+                        alph_length ~sat-= (args.src.count_since(mark: r_mark) & 0xFFFF_FFFF) as base.u32
+                    }
                     if status.is_ok() {
                         break
                     } else if not status.is_suspension() {
@@ -540,7 +554,6 @@ pri func decoder.do_decode_frame_vp8x?(dst: ptr base.pixel_buffer, src: base.io_
 
                 // Reset call_sequence for VP8 decode phase.
                 this.call_sequence = 0x40
-                alph_length = 0
             }
 
             // Apply alpha filter (reverse prediction).
@@ -883,6 +896,13 @@ pri func decoder.do_decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reade
     }
     pix = args.workbuf[.. (this.workbuf_offset_for_transform[0] as base.u64)]
 
+    choose apply_transform_predictor = [
+            apply_transform_predictor_x86_avx2]
+    choose apply_transform_cross_color = [
+            apply_transform_cross_color_x86_avx2]
+    choose apply_transform_subtract_green = [
+            apply_transform_subtract_green_x86_avx2]
+
     which = this.n_transforms
     while which > 0 {
         which -= 1
@@ -900,7 +920,15 @@ pri func decoder.do_decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reade
         if transform_type == 0 {
             this.apply_transform_predictor!(pix: pix, tile_data: tile_data)
         } else if transform_type == 1 {
+            // Fuse subtract_green into cross_color if it's the next transform.
+            if which > 0 {
+                if this.transform_type[which - 1] == 2 {
+                    this.fuse_subtract_green = true
+                    which -= 1
+                }
+            }
             this.apply_transform_cross_color!(pix: pix, tile_data: tile_data)
+            this.fuse_subtract_green = false
         } else if transform_type == 2 {
             this.apply_transform_subtract_green!(pix: pix)
         } else {
@@ -1191,8 +1219,10 @@ pri func decoder.decode_hg_table?(src: base.io_reader, width: base.u32[..= 0x400
 }
 
 pri func decoder.decode_pixels?(dst: slice base.u8, src: base.io_reader, width: base.u32[..= 0x4000], height: base.u32[..= 0x4000], tile_data: roslice base.u8, tile_size_log2: base.u32[..= 9]) {
-    var i : base.u32
-    var n : base.u32[..= 2048]
+    var status : base.status
+    var i      : base.u32
+    var n      : base.u32[..= 2048]
+    var p_max  : base.u64
 
     i = 0
     n = (1 as base.u32) << this.color_cache_bits
@@ -1202,13 +1232,41 @@ pri func decoder.decode_pixels?(dst: slice base.u8, src: base.io_reader, width: 
         i += 1
     }
 
-    this.decode_pixels_slow?(
-            dst: args.dst,
-            src: args.src,
-            width: args.width,
-            height: args.height,
-            tile_data: args.tile_data,
-            tile_size_log2: args.tile_size_log2)
+    // Initialize shared pixel position.
+    this.pix_p = 0
+    this.pix_x = 0
+    this.pix_y = 0
+    this.pix_cc_p = 0
+
+    p_max = (4 * args.width * args.height) as base.u64
+
+    // Fast path: 64-bit bulk refill, table-driven decode.
+    while true {
+        status = this.decode_pixels_fast!(
+                dst: args.dst,
+                src: args.src,
+                width: args.width,
+                height: args.height,
+                tile_data: args.tile_data,
+                tile_size_log2: args.tile_size_log2)
+        if status.is_error() {
+            return status
+        }
+        if this.pix_p >= p_max {
+            return ok
+        }
+        // Slow path: byte-at-a-time refill for remaining pixels.
+        this.decode_pixels_slow?(
+                dst: args.dst,
+                src: args.src,
+                width: args.width,
+                height: args.height,
+                tile_data: args.tile_data,
+                tile_size_log2: args.tile_size_log2)
+        if this.pix_p >= p_max {
+            return ok
+        }
+    }
 }
 
 pri func decoder.swizzle!(dst: ptr base.pixel_buffer, src: roslice base.u8, blend: base.pixel_blend) base.status {

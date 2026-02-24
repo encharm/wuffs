@@ -1002,6 +1002,7 @@ var funcsOther = [...]string{
 	"x86_m256i._mm256_permute4x64_epi64(imm8: u32) x86_m256i",
 	"x86_m256i._mm256_sad_epu8(b: x86_m256i) x86_m256i",
 	"x86_m256i._mm256_shuffle_epi32(imm8: u32) x86_m256i",
+	"x86_m256i._mm256_shuffle_epi8(b: x86_m256i) x86_m256i",
 	"x86_m256i._mm256_sign_epi16(b: x86_m256i) x86_m256i",
 	"x86_m256i._mm256_slli_epi16(imm8: u32) x86_m256i",
 	"x86_m256i._mm256_slli_epi32(imm8: u32) x86_m256i",
