@@ -29,7 +29,7 @@ pri func decoder.decode_pixels_fast!(dst: slice base.u8, src: base.io_reader, wi
     var y : base.u32
     var i : base.u32
 
-    var hg              : base.u32[..= 0xFF]
+    var hg              : base.u32[..= 0x3FF]
     var trivial         : base.u8
     var table_entry     : base.u32
     var table_entry_n_bits : base.u32[..= 15]
@@ -84,10 +84,13 @@ pri func decoder.decode_pixels_fast!(dst: slice base.u8, src: base.io_reader, wi
     tmask = ((1 as base.u32) << tile_size_log2) - 1
 
     while (p < p_max) and (args.src.length() >= 16) {
-        // Compute Huffman group from tile data (once per tile).
+        // Group index is (Red << 8) | Green in BGRA pixel layout.
         i = ((((y >> tile_size_log2) ~mod* width_in_tiles) ~mod+ (x >> tile_size_log2)) ~mod* 4) ~mod+ 1
         if (i as base.u64) < args.tile_data.length() {
             hg = args.tile_data[i as base.u64] as base.u32
+            if ((i as base.u64) + 1) < args.tile_data.length() {
+                hg = (((args.tile_data[(i as base.u64) + 1] as base.u32) << 8) | hg) & 0x3FF
+            }
         }
         trivial = this.hg_trivial[hg]
 

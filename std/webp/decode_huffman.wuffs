@@ -8,60 +8,118 @@
 //
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-pri func decoder.decode_huffman_groups?(src: base.io_reader, n_huffman_groups: base.u32[..= 256]) {
-    var hg : base.u32
-    var ht : base.u32
+pri func decoder.decode_huffman_groups?(src: base.io_reader, n_huffman_groups: base.u32[..= 1024], n_bitstream_groups: base.u32[..= 0x1_0000]) {
+    var hg         : base.u32
+    var ht         : base.u32
+    var target     : base.u32[..= 1024]
+    var sorted_idx : base.u32[..= 1024]
+    var raw_hg     : base.u32
 
     var red_entry   : base.u32
     var blue_entry  : base.u32
     var alpha_entry : base.u32
     var green_entry : base.u32
 
-    hg = 0
-    while hg < args.n_huffman_groups {
-        assert hg < 256 via "a < b: a < c; c <= b"(c: args.n_huffman_groups)
-        // Primary tables for the 5 trees are at fixed offsets:
-        //   Green=0, Red=256, Blue=512, Alpha=768, Distance=1024.
-        // Secondary tables are allocated from offset 1280 onward.
-        this.ht_next_top = 1280
-        ht = 0
-        while ht < 5,
-                inv hg < 256,
-        {
-            this.decode_huffman_tree?(src: args.src, hg: hg, ht: ht)
-            ht += 1
-        }
-
-        // Detect trivial literal groups (R/B/A are single-symbol trees).
-        // A leaf entry with 0 bits: 0x8000_0000 | (symbol << 8) | 0.
-        red_entry = this.huffman_tables[hg][256]
-        blue_entry = this.huffman_tables[hg][512]
-        alpha_entry = this.huffman_tables[hg][768]
-        if ((red_entry & 0x8000_000F) == 0x8000_0000) and
-                ((blue_entry & 0x8000_000F) == 0x8000_0000) and
-                ((alpha_entry & 0x8000_000F) == 0x8000_0000) {
-            this.hg_literal_arb[hg] =
-                    (((alpha_entry >> 8) & 0xFF) << 24) |
-                    (((red_entry >> 8) & 0xFF) << 16) |
-                    ((blue_entry >> 8) & 0xFF)
-            // Check if GREEN is also trivial with a literal value.
-            green_entry = this.huffman_tables[hg][0]
-            if ((green_entry & 0x8000_000F) == 0x8000_0000) and
-                    (((green_entry >> 8) & 0xFFFF) < 0x100) {
-                this.hg_trivial[hg] = 2
-                this.hg_literal_arb[hg] |= ((green_entry >> 8) & 0xFF) << 8
-            } else {
-                this.hg_trivial[hg] = 1
+    if args.n_bitstream_groups <= args.n_huffman_groups {
+        // Non-compacted: decode n_huffman_groups trees directly.
+        hg = 0
+        while hg < args.n_huffman_groups {
+            assert hg < 1024 via "a < b: a < c; c <= b"(c: args.n_huffman_groups)
+            this.ht_next_top = 1280
+            ht = 0
+            while ht < 5,
+                    inv hg < 1024,
+            {
+                this.decode_huffman_tree?(src: args.src, hg: hg, ht: ht)
+                ht += 1
             }
-        } else {
-            this.hg_trivial[hg] = 0
-        }
 
-        hg += 1
+            red_entry = this.huffman_tables[hg][256]
+            blue_entry = this.huffman_tables[hg][512]
+            alpha_entry = this.huffman_tables[hg][768]
+            if ((red_entry & 0x8000_000F) == 0x8000_0000) and
+                    ((blue_entry & 0x8000_000F) == 0x8000_0000) and
+                    ((alpha_entry & 0x8000_000F) == 0x8000_0000) {
+                this.hg_literal_arb[hg] =
+                        (((alpha_entry >> 8) & 0xFF) << 24) |
+                        (((red_entry >> 8) & 0xFF) << 16) |
+                        ((blue_entry >> 8) & 0xFF)
+                green_entry = this.huffman_tables[hg][0]
+                if ((green_entry & 0x8000_000F) == 0x8000_0000) and
+                        (((green_entry >> 8) & 0xFFFF) < 0x100) {
+                    this.hg_trivial[hg] = 2
+                    this.hg_literal_arb[hg] |= ((green_entry >> 8) & 0xFF) << 8
+                } else {
+                    this.hg_trivial[hg] = 1
+                }
+            } else {
+                this.hg_trivial[hg] = 0
+            }
+
+            hg += 1
+        }
+    } else {
+        // Compacted: the bitstream contains n_bitstream_groups sets of
+        // Huffman trees, but only n_huffman_groups are actually used.
+        // Merge-iterate with the sorted list of used indices; unused
+        // trees are decoded into the scratch slot at index 1024.
+        sorted_idx = 0
+        raw_hg = 0
+        while raw_hg < args.n_bitstream_groups,
+                inv sorted_idx <= 1024,
+        {
+            // Determine where to store this group's trees.
+            if (sorted_idx < this.hg_n_sorted) and (sorted_idx < 1024) {
+                if (this.hg_sorted[sorted_idx] as base.u32) == raw_hg {
+                    target = sorted_idx
+                    sorted_idx += 1
+                } else {
+                    target = 1024
+                }
+            } else {
+                target = 1024
+            }
+
+            this.ht_next_top = 1280
+            ht = 0
+            while ht < 5,
+                    inv target <= 1024,
+                    inv sorted_idx <= 1024,
+            {
+                this.decode_huffman_tree?(src: args.src, hg: target, ht: ht)
+                ht += 1
+            }
+
+            if target < 1024 {
+                red_entry = this.huffman_tables[target][256]
+                blue_entry = this.huffman_tables[target][512]
+                alpha_entry = this.huffman_tables[target][768]
+                if ((red_entry & 0x8000_000F) == 0x8000_0000) and
+                        ((blue_entry & 0x8000_000F) == 0x8000_0000) and
+                        ((alpha_entry & 0x8000_000F) == 0x8000_0000) {
+                    this.hg_literal_arb[target] =
+                            (((alpha_entry >> 8) & 0xFF) << 24) |
+                            (((red_entry >> 8) & 0xFF) << 16) |
+                            ((blue_entry >> 8) & 0xFF)
+                    green_entry = this.huffman_tables[target][0]
+                    if ((green_entry & 0x8000_000F) == 0x8000_0000) and
+                            (((green_entry >> 8) & 0xFFFF) < 0x100) {
+                        this.hg_trivial[target] = 2
+                        this.hg_literal_arb[target] |= ((green_entry >> 8) & 0xFF) << 8
+                    } else {
+                        this.hg_trivial[target] = 1
+                    }
+                } else {
+                    this.hg_trivial[target] = 0
+                }
+            }
+
+            raw_hg ~mod+= 1
+        }
     }
 }
 
-pri func decoder.decode_huffman_tree?(src: base.io_reader, hg: base.u32[..= 255], ht: base.u32[..= 4]) {
+pri func decoder.decode_huffman_tree?(src: base.io_reader, hg: base.u32[..= 1024], ht: base.u32[..= 4]) {
     var c8         : base.u8
     var use_simple : base.u32[..= 1]
     var status     : base.status
@@ -106,7 +164,7 @@ pri func decoder.decode_huffman_tree?(src: base.io_reader, hg: base.u32[..= 255]
     }
 }
 
-pri func decoder.decode_huffman_tree_simple?(src: base.io_reader, hg: base.u32[..= 255], ht: base.u32[..= 4]) {
+pri func decoder.decode_huffman_tree_simple?(src: base.io_reader, hg: base.u32[..= 1024], ht: base.u32[..= 4]) {
     var c8                  : base.u8
     var use_second_symbol   : base.u32[..= 1]
     var first_symbol_n_bits : base.u32[..= 8]
@@ -325,7 +383,7 @@ pri func decoder.build_code_lengths_huffman_nodes!() base.status {
 // build_huffman_table! builds a two-level Huffman lookup table, modeled on
 // Deflate's init_huff!. Primary table: 8-bit index (256 entries). Secondary
 // tables handle codes longer than 8 bits via redirect entries.
-pri func decoder.build_huffman_table!(hg: base.u32[..= 255], ht: base.u32[..= 4]) base.status {
+pri func decoder.build_huffman_table!(hg: base.u32[..= 1024], ht: base.u32[..= 4]) base.status {
     var base_offset       : base.u32[..= 3840]
     var i                 : base.u32[..= 2328]
     var n_symbols         : base.u32[..= 2328]

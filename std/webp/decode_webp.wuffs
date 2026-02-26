@@ -75,7 +75,14 @@ pub struct decoder? implements base.image_decoder(
         color_cache_bits         : base.u32[..= 11],
         overall_color_cache_bits : base.u32[..= 11],
         overall_tile_size_log2   : base.u32[..= 9],
-        overall_n_huffman_groups : base.u32[..= 256],
+        overall_n_huffman_groups : base.u32[..= 1024],
+
+        // Compaction state for sparse Huffman group indices.
+        // When the entropy image has max_index >= 1024 but <= 1024 distinct
+        // groups, indices are remapped to dense 0..K-1 in the tile data.
+        hg_compacted        : base.bool,
+        hg_bitstream_groups : base.u32[..= 0x1_0000],
+        hg_n_sorted         : base.u32[..= 1024],
 
         ht_n_symbols              : base.u32[..= 2328],
         ht_code_lengths_remaining : base.u32,
@@ -117,6 +124,9 @@ pub struct decoder? implements base.image_decoder(
         palette     : array[4 * 256] base.u8,
         color_cache : array[2048] base.u32,
 
+        // Sorted distinct original HG indices for compacted decode.
+        hg_sorted : array[1024] base.u16,
+
         codes        : array[2328] base.u16,
         code_lengths : array[2328] base.u16,
 
@@ -144,15 +154,17 @@ pub struct decoder? implements base.image_decoder(
         //
         // huffman_table_base_offsets[hg][ht] is the starting index of
         // tree ht's primary table within huffman_tables[hg].
-        huffman_tables : array[256] array[4096] base.u32,
-        huffman_table_base_offsets : array[256] array[5] base.u16,
+        // Index 1024 is a scratch slot for discarding unused trees
+        // during compacted Huffman group decode.
+        huffman_tables : array[1025] array[4096] base.u32,
+        huffman_table_base_offsets : array[1025] array[5] base.u16,
 
         // Per Huffman group: 0=normal, 1=trivial_literal (R/B/A are
         // single-symbol), 2=trivial_code (all 4 are single-symbol).
-        hg_trivial : array[256] base.u8,
+        hg_trivial : array[1025] base.u8,
         // Pre-computed (alpha << 24) | (red << 16) | blue for trivial groups.
         // For trivial_code, also includes (green << 8).
-        hg_literal_arb : array[256] base.u32,
+        hg_literal_arb : array[1025] base.u32,
 
 )
 
@@ -863,7 +875,7 @@ pri func decoder.do_decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reade
     this.overall_color_cache_bits = this.color_cache_bits
     this.decode_hg_table?(src: args.src, width: width, workbuf: args.workbuf)
     this.color_cache_bits = this.overall_color_cache_bits
-    this.decode_huffman_groups?(src: args.src, n_huffman_groups: this.overall_n_huffman_groups)
+    this.decode_huffman_groups?(src: args.src, n_huffman_groups: this.overall_n_huffman_groups, n_bitstream_groups: this.hg_bitstream_groups)
 
     while true {
         if ((this.workbuf_offset_for_color_indexing as base.u64) > (this.workbuf_offset_for_transform[0] as base.u64)) or
@@ -993,7 +1005,7 @@ pri func decoder.decode_transform?(src: base.io_reader, workbuf: slice base.u8) 
         this.n_bits -= 3
 
         this.decode_color_cache_parameters?(src: args.src)
-        this.decode_huffman_groups?(src: args.src, n_huffman_groups: 1)
+        this.decode_huffman_groups?(src: args.src, n_huffman_groups: 1, n_bitstream_groups: 1)
 
         while true,
                 inv transform_type < 2,
@@ -1054,7 +1066,7 @@ pri func decoder.decode_transform?(src: base.io_reader, workbuf: slice base.u8) 
         }
 
         this.decode_color_cache_parameters?(src: args.src)
-        this.decode_huffman_groups?(src: args.src, n_huffman_groups: 1)
+        this.decode_huffman_groups?(src: args.src, n_huffman_groups: 1, n_bitstream_groups: 1)
 
         this.decode_pixels?(
                 dst: this.palette[.. 4 * this.color_indexing_palette_size],
@@ -1121,7 +1133,19 @@ pri func decoder.decode_hg_table?(src: base.io_reader, width: base.u32[..= 0x400
     var hg_pixels      : slice base.u8
     var n              : base.u64
     var p              : roslice base.u8
-    var hg_plus_1      : base.u32[..= 256]
+    var hg_raw         : base.u32
+    var max_hg         : base.u32
+    var k              : base.u32[..= 1024]
+    var j              : base.u32[..= 1024]
+    var found          : base.bool
+    var sort_i         : base.u32[..= 1024]
+    var sort_j         : base.u32[..= 1024]
+    var sort_val       : base.u16
+    var q              : slice base.u8
+    var lo             : base.u32[..= 1024]
+    var hi             : base.u32[..= 1024]
+    var mid            : base.u32[..= 1024]
+    var compact        : base.u32
 
     if this.n_bits < 1 {
         c8 = args.src.read_u8?()
@@ -1135,6 +1159,8 @@ pri func decoder.decode_hg_table?(src: base.io_reader, width: base.u32[..= 0x400
 
     if use_hg_table == 0 {
         this.overall_n_huffman_groups = 1
+        this.hg_compacted = false
+        this.hg_bitstream_groups = 1
         this.overall_tile_size_log2 = 0
         if ((this.workbuf_offset_for_transform[0] as base.u64) > (this.workbuf_offset_for_transform[1] as base.u64)) or
                 ((this.workbuf_offset_for_transform[1] as base.u64) > args.workbuf.length()) {
@@ -1168,7 +1194,7 @@ pri func decoder.decode_hg_table?(src: base.io_reader, width: base.u32[..= 0x400
     this.overall_tile_size_log2 = tile_size_log2
 
     this.decode_color_cache_parameters?(src: args.src)
-    this.decode_huffman_groups?(src: args.src, n_huffman_groups: 1)
+    this.decode_huffman_groups?(src: args.src, n_huffman_groups: 1, n_bitstream_groups: 1)
     while true,
             inv tile_size_log2 >= 2,
     {
@@ -1191,7 +1217,6 @@ pri func decoder.decode_hg_table?(src: base.io_reader, width: base.u32[..= 0x400
         yield? status
     }
 
-    this.overall_n_huffman_groups = 1
     if ((this.workbuf_offset_for_transform[0] as base.u64) > (this.workbuf_offset_for_transform[1] as base.u64)) or
             ((this.workbuf_offset_for_transform[1] as base.u64) > args.workbuf.length()) {
         return base."#bad workbuf length"
@@ -1205,17 +1230,122 @@ pri func decoder.decode_hg_table?(src: base.io_reader, width: base.u32[..= 0x400
     if n > hg_pixels.length() {
         return base."#bad workbuf length"
     }
+
+    // Pass 1: find max group index across all entropy image pixels.
+    max_hg = 0
     p = hg_pixels[.. n]
     while p.length() >= 4 {
-        if p[2] <> 0 {
-            return "#unsupported number of Huffman groups"
-        }
-        hg_plus_1 = (p[1] as base.u32) + 1
-        if this.overall_n_huffman_groups < hg_plus_1 {
-            this.overall_n_huffman_groups = hg_plus_1
+        hg_raw = ((p[2] as base.u32) << 8) | (p[1] as base.u32)
+        if max_hg < hg_raw {
+            max_hg = hg_raw
         }
         p = p[4 ..]
     }
+
+    if max_hg < 1024 {
+        // Fast path: no compaction needed. Direct index mapping.
+        this.hg_compacted = false
+        this.overall_n_huffman_groups = (max_hg & 0x3FF) + 1
+        this.hg_bitstream_groups = (max_hg & 0x3FF) + 1
+        return ok
+    }
+
+    // Compaction: max_hg >= 1024. Sparse indices need remapping to dense
+    // 0..K-1 so they fit in our fixed-size arrays.
+    //
+    // Pass 2: collect distinct group indices into hg_sorted[].
+    k = 0
+    if n > hg_pixels.length() {
+        return base."#bad workbuf length"
+    }
+    p = hg_pixels[.. n]
+    while p.length() >= 4,
+            inv k <= 1024,
+    {
+        hg_raw = ((p[2] as base.u32) << 8) | (p[1] as base.u32)
+        // Linear scan for duplicates in hg_sorted[0 .. k].
+        found = false
+        j = 0
+        while j < k,
+                inv k <= 1024,
+                inv p.length() >= 4,
+        {
+            assert j < 1024 via "a < b: a < c; c <= b"(c: k)
+            if (this.hg_sorted[j] as base.u32) == (hg_raw & 0xFFFF) {
+                found = true
+                break
+            }
+            j += 1
+        }
+        if not found {
+            if k >= 1024 {
+                return "#unsupported number of Huffman groups"
+            }
+            this.hg_sorted[k] = (hg_raw & 0xFFFF) as base.u16
+            k += 1
+        }
+        p = p[4 ..]
+    }
+
+    // Insertion sort hg_sorted[0 .. k].
+    sort_i = 1
+    while sort_i < k {
+        assert sort_i < 1024 via "a < b: a < c; c <= b"(c: k)
+        sort_val = this.hg_sorted[sort_i]
+        sort_j = sort_i
+        while sort_j > 0,
+                inv sort_i < k,
+        {
+            if sort_j < 1024 {
+                if this.hg_sorted[sort_j - 1] <= sort_val {
+                    break
+                }
+                this.hg_sorted[sort_j] = this.hg_sorted[sort_j - 1]
+            }
+            sort_j -= 1
+        }
+        if sort_j < 1024 {
+            this.hg_sorted[sort_j] = sort_val
+        }
+        assert sort_i < 1024 via "a < b: a < c; c <= b"(c: k)
+        sort_i += 1
+    }
+
+    // Pass 3: rewrite tile data with compact indices via binary search.
+    if n > hg_pixels.length() {
+        return base."#bad workbuf length"
+    }
+    q = hg_pixels[.. n]
+    while q.length() >= 4 {
+        hg_raw = ((q[2] as base.u32) << 8) | (q[1] as base.u32)
+        // Binary search in hg_sorted[0 .. k].
+        lo = 0
+        hi = k
+        while lo < hi,
+                inv q.length() >= 4,
+        {
+            mid = (lo + hi) / 2
+            if mid < 1024 {
+                if (this.hg_sorted[mid] as base.u32) < hg_raw {
+                    lo = mid + 1
+                } else {
+                    hi = mid
+                }
+            } else {
+                break
+            }
+        }
+        // lo is now the compact index (0..K-1).
+        compact = lo
+        q[1] = (compact & 0xFF) as base.u8
+        q[2] = ((compact >> 8) & 0xFF) as base.u8
+        q = q[4 ..]
+    }
+
+    this.hg_compacted = true
+    this.overall_n_huffman_groups = k
+    this.hg_bitstream_groups = (max_hg & 0xFFFF) + 1
+    this.hg_n_sorted = k
 }
 
 pri func decoder.decode_pixels?(dst: slice base.u8, src: base.io_reader, width: base.u32[..= 0x4000], height: base.u32[..= 0x4000], tile_data: roslice base.u8, tile_size_log2: base.u32[..= 9]) {
@@ -1323,7 +1453,7 @@ pri func decoder.swizzle!(dst: ptr base.pixel_buffer, src: roslice base.u8, blen
 }
 
 pub func decoder.frame_dirty_rect() base.rect_ie_u32 {
-    if this.is_vp8_lossy {
+    if this.is_vp8_lossy and (not this.is_vp8x) {
         return this.vp8.frame_dirty_rect()
     }
     return this.util.make_rect_ie_u32(
