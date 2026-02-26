@@ -286,8 +286,8 @@ pri func decoder.bool_fill_from_workbuf!(workbuf: slice base.u8) {
         this.bool_ri = 0
     }
 
-    // Fill from workbuf partition 0 data.
-    while this.bool_wi < 0x1000 {
+    // Fill from workbuf partition 0 data (limited to bytes actually copied).
+    while (this.bool_wi < 0x1000) and (this.p0_wbuf_ri < this.p0_wbuf_count) {
         idx = this.workbuf_offset_v_end ~mod+ (this.p0_wbuf_ri as base.u64)
         if idx >= args.workbuf.length() {
             break

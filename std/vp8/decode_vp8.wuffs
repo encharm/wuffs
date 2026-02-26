@@ -131,8 +131,10 @@ pub struct decoder? implements base.image_decoder(
         workbuf_offset_u_end  : base.u64[..= 0x1400_0000],
         workbuf_offset_v_end  : base.u64[..= 0x1800_0000],
 
-        // Partition 0 data stored in workbuf: read index for refilling bool_buffer.
-        p0_wbuf_ri : base.u32,
+        // Partition 0 data stored in workbuf: read index and actual count
+        // of bytes copied (may be less than partition0_size if input truncated).
+        p0_wbuf_ri    : base.u32,
+        p0_wbuf_count : base.u32,
 
         // ---- Output ----
         dst_x : base.u32,
@@ -411,11 +413,16 @@ pri func decoder.do_decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reade
     choose normal_hfilter_inner_uv = [
             normal_hfilter_inner_uv_x86_avx2]
 
+    // Ensure mb_coeffs is zeroed. IDCT/WHT rely on unwritten positions being 0.
+    // With LEAVE_INTERNAL_BUFFERS_UNINITIALIZED, mb_coeffs starts as garbage.
+    this.init_mb_coeffs!()
+
     // Initialize coefficient probabilities from defaults.
     this.init_coeff_probs!()
     // Copy partition 0 data from src into workbuf[v_end..] so that the
     // boolean decoder can be refilled during MB mode decoding.
     this.p0_wbuf_ri = 0
+    this.p0_wbuf_count = 0
     off = this.workbuf_offset_v_end
     remaining = this.partition0_size
     while (remaining > 0) and (args.src.length() > 0) {
@@ -425,6 +432,7 @@ pri func decoder.do_decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reade
         args.src.skip_u32_fast!(actual: 1, worst_case: 1)
         off ~mod+= 1
         remaining ~mod-= 1
+        this.p0_wbuf_count ~mod+= 1
     }
 
     // Parse frame header from workbuf-stored partition 0 data.
@@ -451,6 +459,17 @@ pri func decoder.do_decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reade
     }
 
     this.call_sequence = 0x60
+}
+
+pri func decoder.init_mb_coeffs!() {
+    var i : base.u32
+
+    i = 0
+    while i < 400 {
+        assert i < 400 via "a < b: a < c; c <= b"(c: 400)
+        this.mb_coeffs[i] = 0
+        i += 1
+    }
 }
 
 pri func decoder.init_coeff_probs!() {
