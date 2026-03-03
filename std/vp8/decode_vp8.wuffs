@@ -15,7 +15,8 @@ pub status "#unsupported VP8 file"
 
 pri status "#internal error: inconsistent decoder state"
 
-// Max workbuf: 1024 * 1024 * 384 + 524288 (max partition0) = 0x1808_0000.
+// Max workbuf: 1024 * 1024 * 384 (planes) + 524288 (partition0) = 0x1808_0000.
+// For multi-partition VP8, the WebP container adds coefficient data space.
 pub const DECODER_WORKBUF_LEN_MAX_INCL_WORST_CASE : base.u64 = 0x1808_0000
 
 pub struct decoder? implements base.image_decoder(
@@ -108,6 +109,20 @@ pub struct decoder? implements base.image_decoder(
         // ---- Partitions ----
         num_partitions  : base.u32[..= 8],
 
+        // Multi-partition state for coefficient data partitions.
+        // When num_partitions > 1, all coefficient data is copied to workbuf
+        // and per-partition boolean decoder state is saved/restored at row
+        // boundaries (MB rows cycle through partitions round-robin).
+        multi_partition      : base.bool,
+        current_partition    : base.u32[..= 7],
+        part_range           : array[8] base.u32,
+        part_value           : array[8] base.u64,
+        part_bits            : array[8] base.u32,
+        part_wbuf_ri         : array[8] base.u32,
+        part_wbuf_size       : array[8] base.u32,
+        part_wbuf_offset     : array[8] base.u64,
+        current_part_wbuf_ri : base.u32,
+
         // ---- Macroblock state ----
         mb_x : base.u32[..= 0x400],
         mb_y : base.u32[..= 0x400],
@@ -125,6 +140,7 @@ pub struct decoder? implements base.image_decoder(
         // U plane:     [y_end .. u_end)
         // V plane:     [u_end .. v_end)
         // Partition 0: [v_end .. v_end + partition0_size)
+        // Coeff data:  [v_end + partition0_size .. ) (multi-partition only)
         y_stride              : base.u32[..= 0x4000],
         uv_stride             : base.u32[..= 0x2000],
         workbuf_offset_y_end  : base.u64[..= 0x1000_0000],
@@ -637,4 +653,9 @@ pub func decoder.workbuf_len() base.range_ii_u64 {
     return this.util.make_range_ii_u64(
             min_incl: total,
             max_incl: total)
+}
+
+// workbuf_len_total returns the VP8 workbuf requirement as a plain u64.
+pub func decoder.workbuf_len_total() base.u64 {
+    return this.workbuf_offset_v_end ~sat+ (this.partition0_size as base.u64)
 }

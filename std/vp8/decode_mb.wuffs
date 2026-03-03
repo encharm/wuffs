@@ -9,25 +9,101 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 pri func decoder.decode_frame_mb!(src: base.io_reader, dst: ptr base.pixel_buffer, workbuf: slice base.u8) base.status {
-    var remaining      : base.u32
     var swizzle_status : base.status
     var prev_mby       : base.u32[..= 0x3FF]
+    var i              : base.u32
+    var part_size      : base.u32
+    var total_size     : base.u32
+    var n_copied       : base.u32
+    var coeff_start    : base.u64
+    var off            : base.u64
+    var new_part       : base.u32
+    var p              : base.u32[..= 7]
+    var unconsumed     : base.u32
 
-    // Skip partition size bytes (for multi-partition files).
     if this.num_partitions > 1 {
-        remaining = (this.num_partitions - 1) * 3
-        while (remaining > 0) and (args.src.length() > 0) {
-            args.src.skip_u32_fast!(actual: 1, worst_case: 1)
-            remaining -= 1
-        }
-    }
+        // Multi-partition: read partition sizes, copy all coefficient data
+        // to workbuf, and set up per-partition boolean decoder state.
+        this.multi_partition = true
 
-    // Initialize partition 1 (coefficient data) boolean decoder.
-    // Partition 0 (mode data) boolean decoder state is kept from decode_partition0.
-    this.p1_ri = 0
-    this.p1_wi = 0
-    this.p1_fill_buffer!(src: args.src, n: 0x1000)
-    this.p1_init!()
+        // Read (num_partitions - 1) 3-byte LE partition sizes.
+        total_size = 0
+        i = 0
+        while (i < 7) and ((i + 1) < this.num_partitions) {
+            if args.src.length() >= 3 {
+                part_size = args.src.peek_u24le_as_u32()
+                args.src.skip_u32_fast!(actual: 3, worst_case: 3)
+            } else {
+                part_size = 0
+            }
+            if i < 8 {
+                this.part_wbuf_size[i] = part_size
+            }
+            total_size ~mod+= part_size
+            i += 1
+        }
+
+        // Copy all coefficient data from src to workbuf.
+        coeff_start = this.workbuf_offset_v_end ~mod+ (this.partition0_size as base.u64)
+        off = coeff_start
+        n_copied = 0
+        while args.src.length() > 0 {
+            if off < args.workbuf.length() {
+                args.workbuf[off] = args.src.peek_u8()
+            }
+            args.src.skip_u32_fast!(actual: 1, worst_case: 1)
+            off ~mod+= 1
+            n_copied ~mod+= 1
+        }
+
+        // Last partition size = total copied - sum of first (N-1) sizes.
+        if this.num_partitions > 0 {
+            i = this.num_partitions - 1
+        } else {
+            i = 0
+        }
+        if i < 8 {
+            if n_copied > total_size {
+                this.part_wbuf_size[i] = n_copied - total_size
+            } else {
+                this.part_wbuf_size[i] = 0
+            }
+        }
+
+        // Compute per-partition workbuf offsets.
+        off = coeff_start
+        i = 0
+        while (i < this.num_partitions) and (i < 8) {
+            this.part_wbuf_offset[i] = off
+            off ~mod+= this.part_wbuf_size[i] as base.u64
+            i += 1
+        }
+
+        // Initialize per-partition boolean decoder state.
+        i = 0
+        while i < 8 {
+            this.part_range[i] = 254
+            this.part_value[i] = 0
+            this.part_bits[i] = 0
+            this.part_wbuf_ri[i] = 0
+            i += 1
+        }
+
+        // Activate partition 0.
+        this.current_partition = 0
+        this.current_part_wbuf_ri = 0
+        this.p1_ri = 0
+        this.p1_wi = 0
+        this.p1_fill_from_workbuf!(workbuf: args.workbuf)
+        this.p1_init!()
+    } else {
+        // Single partition: stream coefficient data from src.
+        this.multi_partition = false
+        this.p1_ri = 0
+        this.p1_wi = 0
+        this.p1_fill_buffer!(src: args.src, n: 0x1000)
+        this.p1_init!()
+    }
 
     this.above_nz[.. 8200].bulk_memset!(byte_value: 0)
     this.above_nz_y2[.. 0x401].bulk_memset!(byte_value: 0)
@@ -44,6 +120,42 @@ pri func decoder.decode_frame_mb!(src: base.io_reader, dst: ptr base.pixel_buffe
     // Filter parameters use a 2-row ring buffer indexed by (mb_y & 1) * 0x400.
     this.mb_y = 0
     while this.mb_y < this.mb_height {
+        // Multi-partition: switch to the correct partition for this MB row.
+        if this.multi_partition and (this.mb_y > 0) {
+            // Save current partition state.
+            p = this.current_partition
+            this.part_range[p] = this.p1_range
+            this.part_value[p] = this.p1_value
+            this.part_bits[p] = this.p1_bits
+            // Adjust wbuf_ri for unconsumed bytes still in p1_buffer.
+            if this.p1_wi >= this.p1_ri {
+                unconsumed = this.p1_wi - this.p1_ri
+            } else {
+                unconsumed = 0
+            }
+            this.part_wbuf_ri[p] = this.current_part_wbuf_ri ~sat- unconsumed
+
+            // Advance to next partition (round-robin).
+            new_part = (this.current_partition as base.u32) + 1
+            if new_part >= this.num_partitions {
+                new_part = 0
+            }
+
+            // Restore new partition state.
+            if new_part < 8 {
+                this.p1_range = this.part_range[new_part] & 0xFF
+                this.p1_value = this.part_value[new_part]
+                this.p1_bits = this.part_bits[new_part]
+                this.current_part_wbuf_ri = this.part_wbuf_ri[new_part]
+                this.current_partition = new_part as base.u32[..= 7]
+            }
+
+            // Refill p1_buffer from new partition's workbuf region.
+            this.p1_ri = 0
+            this.p1_wi = 0
+            this.p1_fill_from_workbuf!(workbuf: args.workbuf)
+        }
+
         // Zero the current row's filter params in the ring buffer.
         if (this.mb_y & 1) == 0 {
             this.mb_filter_level[0x000 .. 0x400].bulk_memset!(byte_value: 0)
@@ -66,7 +178,11 @@ pri func decoder.decode_frame_mb!(src: base.io_reader, dst: ptr base.pixel_buffe
 
             // Refill partition 1 (coefficient data) buffer when running low.
             if (this.p1_ri ~mod+ 256) >= this.p1_wi {
-                this.p1_fill_buffer!(src: args.src, n: 0x800)
+                if this.multi_partition {
+                    this.p1_fill_from_workbuf!(workbuf: args.workbuf)
+                } else {
+                    this.p1_fill_buffer!(src: args.src, n: 0x800)
+                }
             }
 
             this.decode_one_mb!(workbuf: args.workbuf)

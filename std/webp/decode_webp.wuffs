@@ -433,12 +433,18 @@ pri func decoder.do_decode_frame_config?(dst: nptr base.frame_config, src: base.
 
 pub func decoder.decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reader, blend: base.pixel_blend, workbuf: slice base.u8, opts: nptr base.decode_frame_options) {
     var status : base.status
+    var r_mark : base.u64
 
     while true {
         if this.is_vp8x {
             status =? this.do_decode_frame_vp8x?(dst: args.dst, src: args.src, blend: args.blend, workbuf: args.workbuf, opts: args.opts)
         } else if this.is_vp8_lossy {
-            status =? this.vp8.decode_frame?(dst: args.dst, src: args.src, blend: args.blend, workbuf: args.workbuf, opts: args.opts)
+            io_limit (io: args.src, limit: this.sub_chunk_length as base.u64) {
+                r_mark = args.src.mark()
+                status =? this.vp8.decode_frame?(dst: args.dst, src: args.src, blend: args.blend, workbuf: args.workbuf, opts: args.opts)
+                this.sub_chunk_length ~sat-=
+                        (args.src.count_since(mark: r_mark) & 0xFFFF_FFFF) as base.u32
+            }
         } else {
             status =? this.do_decode_frame?(dst: args.dst, src: args.src, blend: args.blend, workbuf: args.workbuf, opts: args.opts)
         }
@@ -631,7 +637,12 @@ pri func decoder.do_decode_frame_vp8x?(dst: ptr base.pixel_buffer, src: base.io_
         }
 
         while true {
-            status =? this.vp8.decode_frame?(dst: args.dst, src: args.src, blend: args.blend, workbuf: args.workbuf, opts: args.opts)
+            io_limit (io: args.src, limit: this.sub_chunk_length as base.u64) {
+                r_mark = args.src.mark()
+                status =? this.vp8.decode_frame?(dst: args.dst, src: args.src, blend: args.blend, workbuf: args.workbuf, opts: args.opts)
+                this.sub_chunk_length ~sat-=
+                        (args.src.count_since(mark: r_mark) & 0xFFFF_FFFF) as base.u32
+            }
             if status.is_ok() {
                 break
             } else if not status.is_suspension() {
@@ -1513,13 +1524,22 @@ pub func decoder.tell_me_more?(dst: base.io_writer, minfo: nptr base.more_inform
 }
 
 pub func decoder.workbuf_len() base.range_ii_u64 {
+    var total : base.u64
+
     if this.is_vp8x {
         return this.util.make_range_ii_u64(
                 min_incl: this.vp8x_workbuf_len,
                 max_incl: this.vp8x_workbuf_len)
     }
     if this.is_vp8_lossy {
-        return this.vp8.workbuf_len()
+        // VP8 needs planes + partition0. Add remaining VP8 data for
+        // multi-partition coefficient data storage. sub_chunk_length
+        // at this point = partition0 data + partition sizes + coefficient data.
+        total = this.vp8.workbuf_len_total() ~sat+
+                (this.sub_chunk_length as base.u64)
+        return this.util.make_range_ii_u64(
+                min_incl: total,
+                max_incl: total)
     }
     return this.util.make_range_ii_u64(
             min_incl: this.workbuf_offset_for_transform[3] as base.u64,

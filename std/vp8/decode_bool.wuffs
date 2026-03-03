@@ -190,7 +190,15 @@ pri func decoder.p1_read_bool!(prob: base.u8) base.u32[..= 1] {
     // Branchless renormalization via extended 256-entry tables.
     shift = RENORM_SHIFT_256[this.p1_range & 0xFF] as base.u32
     this.p1_range = RENORM_RANGE_256[this.p1_range & 0xFF] as base.u32
-    this.p1_bits ~mod-= shift
+    // Detect EOF: if shift > p1_bits, the unsigned subtraction would wrap,
+    // meaning all valid bits are consumed. Set accumulator to produce 0 for
+    // all subsequent reads, matching libwebp's EOF behavior.
+    if shift > this.p1_bits {
+        this.p1_value = 0
+        this.p1_bits = 56
+    } else {
+        this.p1_bits ~mod-= shift
+    }
 
     return retval
 }
@@ -244,7 +252,12 @@ pri func decoder.p1_read_sign!() base.u32[..= 1] {
     // Branchless renormalization.
     shift = RENORM_SHIFT_256[this.p1_range & 0xFF] as base.u32
     this.p1_range = RENORM_RANGE_256[this.p1_range & 0xFF] as base.u32
-    this.p1_bits ~mod-= shift
+    if shift > this.p1_bits {
+        this.p1_value = 0
+        this.p1_bits = 56
+    } else {
+        this.p1_bits ~mod-= shift
+    }
 
     return retval
 }
@@ -270,6 +283,35 @@ pri func decoder.p1_fill_buffer!(src: base.io_reader, n: base.u32) {
         }
         remaining -= 1
     }
+}
+
+// p1_fill_from_workbuf! refills the partition 1 buffer from the current
+// coefficient partition's data in workbuf (multi-partition mode).
+pri func decoder.p1_fill_from_workbuf!(workbuf: slice base.u8) {
+    var idx  : base.u64
+    var p    : base.u32[..= 7]
+    var poff : base.u64
+
+    // Compact the buffer first.
+    if (this.p1_ri > 0) and (this.p1_ri <= this.p1_wi) {
+        this.p1_buffer[.. 0x1000].copy_from_slice!(s: this.p1_buffer[this.p1_ri .. this.p1_wi])
+        this.p1_wi ~sat-= this.p1_ri
+        this.p1_ri = 0
+    }
+
+    // Fill from current partition's workbuf region.
+    p = this.current_partition
+    poff = this.part_wbuf_offset[p]
+    while (this.p1_wi < 0x1000) and (this.current_part_wbuf_ri < this.part_wbuf_size[p]) {
+        idx = poff ~mod+ (this.current_part_wbuf_ri as base.u64)
+        if idx >= args.workbuf.length() {
+            break
+        }
+        this.p1_buffer[this.p1_wi] = args.workbuf[idx]
+        this.p1_wi += 1
+        this.current_part_wbuf_ri ~mod+= 1
+    }
+
 }
 
 // ---- Partition 0 (mode data) boolean decoder ----
