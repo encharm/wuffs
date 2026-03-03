@@ -74,20 +74,20 @@ pub struct decoder? implements base.image_decoder(
         segment_prob       : array[3] base.u8,
 
         // ---- Loop filter ----
-        filter_type     : base.u8[..= 1],
-        filter_level    : base.u8[..= 63],
-        sharpness_level : base.u8[..= 7],
-        lf_delta_enabled   : base.bool,
-        lf_ref_delta  : array[4] base.i32[..= 63],
-        lf_mode_delta : array[4] base.i32[..= 63],
+        filter_type      : base.u8[..= 1],
+        filter_level     : base.u8[..= 63],
+        sharpness_level  : base.u8[..= 7],
+        lf_delta_enabled : base.bool,
+        lf_ref_delta     : array[4] base.i32[..= 63],
+        lf_mode_delta    : array[4] base.i32[..= 63],
 
         // ---- Quantization ----
-        quant_y_ac_qi      : base.u8[..= 127],
-        quant_y_dc_delta   : base.i32,
-        quant_y2_dc_delta  : base.i32,
-        quant_y2_ac_delta  : base.i32,
-        quant_uv_dc_delta  : base.i32,
-        quant_uv_ac_delta  : base.i32,
+        quant_y_ac_qi     : base.u8[..= 127],
+        quant_y_dc_delta  : base.i32,
+        quant_y2_dc_delta : base.i32,
+        quant_y2_ac_delta : base.i32,
+        quant_uv_dc_delta : base.i32,
+        quant_uv_ac_delta : base.i32,
 
         // Per-segment dequantization values.
         dequant_y_dc  : array[4] base.u32,
@@ -107,7 +107,7 @@ pub struct decoder? implements base.image_decoder(
         fstrength_hlevel : array[8] base.u8,
 
         // ---- Partitions ----
-        num_partitions  : base.u32[..= 8],
+        num_partitions : base.u32[..= 8],
 
         // Multi-partition state for coefficient data partitions.
         // When num_partitions > 1, all coefficient data is copied to workbuf
@@ -127,13 +127,13 @@ pub struct decoder? implements base.image_decoder(
         mb_x : base.u32[..= 0x400],
         mb_y : base.u32[..= 0x400],
 
-        segment_id        : base.u8[..= 3],
-        is_skip_coeff     : base.bool,
-        mb_no_skip_coeff  : base.bool,
-        prob_skip_false   : base.u8,
-        mb_luma_mode   : base.u8,
-        mb_chroma_mode : base.u8[..= 3],
-        left_nz_y2    : base.u8,
+        segment_id       : base.u8[..= 3],
+        is_skip_coeff    : base.bool,
+        mb_no_skip_coeff : base.bool,
+        prob_skip_false  : base.u8,
+        mb_luma_mode     : base.u8,
+        mb_chroma_mode   : base.u8[..= 3],
+        left_nz_y2       : base.u8,
 
         // ---- Workbuf layout ----
         // Y plane:     [0 .. y_end)
@@ -141,11 +141,11 @@ pub struct decoder? implements base.image_decoder(
         // V plane:     [u_end .. v_end)
         // Partition 0: [v_end .. v_end + partition0_size)
         // Coeff data:  [v_end + partition0_size .. ) (multi-partition only)
-        y_stride              : base.u32[..= 0x4000],
-        uv_stride             : base.u32[..= 0x2000],
-        workbuf_offset_y_end  : base.u64[..= 0x1000_0000],
-        workbuf_offset_u_end  : base.u64[..= 0x1400_0000],
-        workbuf_offset_v_end  : base.u64[..= 0x1800_0000],
+        y_stride             : base.u32[..= 0x4000],
+        uv_stride            : base.u32[..= 0x2000],
+        workbuf_offset_y_end : base.u64[..= 0x1000_0000],
+        workbuf_offset_u_end : base.u64[..= 0x1400_0000],
+        workbuf_offset_v_end : base.u64[..= 0x1800_0000],
 
         // Partition 0 data stored in workbuf: read index and actual count
         // of bytes copied (may be less than partition0_size if input truncated).
@@ -173,7 +173,7 @@ pub struct decoder? implements base.image_decoder(
         // mb_y_ac_nz[i]: 1 if Y block i has non-zero AC coefficients (16x16 mode).
         // mb_uv_nz[i]: 0=all zero, 1=DC only, 2=has AC.
         mb_y_ac_nz : array[16] base.u8,
-        mb_uv_nz : array[8] base.u8,
+        mb_uv_nz   : array[8] base.u8,
 
         // Side-effect output from decode_block_coeffs: 1 if any AC coefficient
         // (index > 0) was non-zero.
@@ -262,7 +262,7 @@ pri func decoder.do_decode_image_config?(dst: nptr base.image_config, src: base.
     if not this.key_frame {
         return "#unsupported VP8 file"
     }
-    this.partition0_size = (c32 >> 5) & 0x7FFFF
+    this.partition0_size = (c32 >> 5) & 0x7_FFFF
 
     // 7-byte key frame header: 3-byte start code + 4-byte dimensions.
     c32 = args.src.read_u24le_as_u32?()
@@ -504,21 +504,21 @@ pri func decoder.init_coeff_probs!() {
 // Source sub-slices start at the current MB row offset so that swizzle_ycck's
 // (y - y_min_incl) indexing reads the correct data.
 pri func decoder.swizzle_mb_row!(dst: ptr base.pixel_buffer, workbuf: slice base.u8, mby: base.u32[..= 0x3FF]) base.status {
-    var status    : base.status
-    var src0      : slice base.u8
-    var src1      : slice base.u8
-    var src2      : slice base.u8
-    var src3      : slice base.u8
-    var y_width   : base.u32
-    var uv_width  : base.u32
-    var y_min     : base.u32
-    var y_max     : base.u32
-    var y_off     : base.u64
-    var uv_off    : base.u64
-    var u_start   : base.u64
-    var v_start   : base.u64
-    var rem_y_h   : base.u32
-    var rem_uv_h  : base.u32
+    var status   : base.status
+    var src0     : slice base.u8
+    var src1     : slice base.u8
+    var src2     : slice base.u8
+    var src3     : slice base.u8
+    var y_width  : base.u32
+    var uv_width : base.u32
+    var y_min    : base.u32
+    var y_max    : base.u32
+    var y_off    : base.u64
+    var uv_off   : base.u64
+    var u_start  : base.u64
+    var v_start  : base.u64
+    var rem_y_h  : base.u32
+    var rem_uv_h : base.u32
 
     if this.workbuf_offset_v_end > args.workbuf.length() {
         return base."#bad workbuf length"

@@ -134,11 +134,11 @@ pri func decoder.simple_vfilter_16_arm_neon!(workbuf: slice base.u8, q0_off: bas
 
     // delta = sat_i8(3*(q0-p0) + sat_i8(p1-q1))
     // Accumulate via saturating signed adds to avoid overflow.
-    t1 = p1.vqsubq_s8(b: q1)            // p1 - q1 (saturating i8)
-    t2 = q0.vqsubq_s8(b: p0)            // q0 - p0
-    t1 = t1.vqaddq_s8(b: t2)            // (p1-q1) + 1*(q0-p0)
-    t1 = t1.vqaddq_s8(b: t2)            // (p1-q1) + 2*(q0-p0)
-    delta = t1.vqaddq_s8(b: t2)         // (p1-q1) + 3*(q0-p0)
+    t1 = p1.vqsubq_s8(b: q1)  // p1 - q1 (saturating i8)
+    t2 = q0.vqsubq_s8(b: p0)  // q0 - p0
+    t1 = t1.vqaddq_s8(b: t2)  // (p1-q1) + 1*(q0-p0)
+    t1 = t1.vqaddq_s8(b: t2)  // (p1-q1) + 2*(q0-p0)
+    delta = t1.vqaddq_s8(b: t2)  // (p1-q1) + 3*(q0-p0)
 
     // Mask: only apply filter where NeedsFilter passed.
     delta = delta.vandq_u8(b: mask)
@@ -359,12 +359,12 @@ pri func decoder.normal_vfilter_inner_16_arm_neon!(workbuf: slice base.u8, q0_of
     // ---- Combined delta ----
     // HEV: delta = 3*(q0-p0) + (p1-q1)    [filter2]
     // !HEV: delta = 3*(q0-p0)              [filter4 uses no p1-q1]
-    t1 = p1.vqsubq_s8(b: q1)                // p1-q1 (sat i8)
-    t1 = t1.vbicq_u8(b: not_hev)            // zero where !HEV: t1 & ~not_hev
-    t2 = q0.vqsubq_s8(b: p0)                // q0-p0
+    t1 = p1.vqsubq_s8(b: q1)  // p1-q1 (sat i8)
+    t1 = t1.vbicq_u8(b: not_hev)  // zero where !HEV: t1 & ~not_hev
+    t2 = q0.vqsubq_s8(b: p0)  // q0-p0
     t1 = t1.vqaddq_s8(b: t2)
     t1 = t1.vqaddq_s8(b: t2)
-    delta = t1.vqaddq_s8(b: t2)              // 3*(q0-p0) + hev*(p1-q1)
+    delta = t1.vqaddq_s8(b: t2)  // 3*(q0-p0) + hev*(p1-q1)
     delta = delta.vandq_u8(b: mask)
 
     // ---- v4 = SignedShift(delta+4, 3), v3 = SignedShift(delta+3, 3) ----
@@ -667,12 +667,12 @@ pri func decoder.normal_vfilter_mb_16_arm_neon!(workbuf: slice base.u8, q0_off: 
 
     // ---- Merge HEV (filter2) and !HEV (filter6) results ----
     // p0 += select(hev: v3, !hev: a1)
-    p0_adj = v3.vbicq_u8(b: not_hev)             // v3 where HEV (v3 & ~not_hev)
+    p0_adj = v3.vbicq_u8(b: not_hev)  // v3 where HEV (v3 & ~not_hev)
     p0_adj = p0_adj.vorrq_u8(b: a1.vandq_u8(b: not_hev))  // a1 where !HEV
     p0 = p0.vqaddq_s8(b: p0_adj)
 
     // q0 -= select(hev: v4, !hev: a1)
-    q0_adj = v4.vbicq_u8(b: not_hev)             // v4 where HEV
+    q0_adj = v4.vbicq_u8(b: not_hev)  // v4 where HEV
     q0_adj = q0_adj.vorrq_u8(b: a1.vandq_u8(b: not_hev))  // a1 where !HEV
     q0 = q0.vqsubq_s8(b: q0_adj)
 
@@ -784,9 +784,9 @@ pri func decoder.normal_vfilter_mb_8_arm_neon!(workbuf: slice base.u8, q0_off: b
     var q0_adj    : base.arm_neon_u8x8
 
     // Widening variables for filter6 multiply.
-    var wide      : base.arm_neon_u16x8
-    var tmp       : base.arm_neon_u16x8
-    var k63_16    : base.arm_neon_u16x8
+    var wide   : base.arm_neon_u16x8
+    var tmp    : base.arm_neon_u16x8
+    var k63_16 : base.arm_neon_u16x8
 
     if args.q0_off < (4 * (this.uv_stride as base.u64)) {
         return nothing
@@ -1282,14 +1282,14 @@ pri func decoder.normal_hfilter_mb_8_arm_neon!(workbuf: slice base.u8, q0_off: b
     var s7 : base.arm_neon_u8x8
 
     // Pixel columns after forward transpose.
-    var p3        : base.arm_neon_u8x8
-    var p2        : base.arm_neon_u8x8
-    var p1        : base.arm_neon_u8x8
-    var p0        : base.arm_neon_u8x8
-    var q0        : base.arm_neon_u8x8
-    var q1        : base.arm_neon_u8x8
-    var q2        : base.arm_neon_u8x8
-    var q3        : base.arm_neon_u8x8
+    var p3 : base.arm_neon_u8x8
+    var p2 : base.arm_neon_u8x8
+    var p1 : base.arm_neon_u8x8
+    var p0 : base.arm_neon_u8x8
+    var q0 : base.arm_neon_u8x8
+    var q1 : base.arm_neon_u8x8
+    var q2 : base.arm_neon_u8x8
+    var q3 : base.arm_neon_u8x8
 
     // Filter constants and temporaries.
     var zero      : base.arm_neon_u8x8
@@ -1315,9 +1315,9 @@ pri func decoder.normal_hfilter_mb_8_arm_neon!(workbuf: slice base.u8, q0_off: b
     var q0_adj    : base.arm_neon_u8x8
 
     // Widening variables for filter6 multiply.
-    var wide      : base.arm_neon_u16x8
-    var tmp       : base.arm_neon_u16x8
-    var k63_16    : base.arm_neon_u16x8
+    var wide   : base.arm_neon_u16x8
+    var tmp    : base.arm_neon_u16x8
+    var k63_16 : base.arm_neon_u16x8
 
     // Need 4 bytes before q0 for p3..p0 columns.
     if args.q0_off < 4 {
@@ -1651,14 +1651,14 @@ pri func decoder.normal_hfilter_inner_8_arm_neon!(workbuf: slice base.u8, q0_off
     var s6 : base.arm_neon_u8x8
     var s7 : base.arm_neon_u8x8
 
-    var p3        : base.arm_neon_u8x8
-    var p2        : base.arm_neon_u8x8
-    var p1        : base.arm_neon_u8x8
-    var p0        : base.arm_neon_u8x8
-    var q0        : base.arm_neon_u8x8
-    var q1        : base.arm_neon_u8x8
-    var q2        : base.arm_neon_u8x8
-    var q3        : base.arm_neon_u8x8
+    var p3 : base.arm_neon_u8x8
+    var p2 : base.arm_neon_u8x8
+    var p1 : base.arm_neon_u8x8
+    var p0 : base.arm_neon_u8x8
+    var q0 : base.arm_neon_u8x8
+    var q1 : base.arm_neon_u8x8
+    var q2 : base.arm_neon_u8x8
+    var q3 : base.arm_neon_u8x8
 
     var zero      : base.arm_neon_u8x8
     var sign_bit  : base.arm_neon_u8x8
@@ -1992,14 +1992,14 @@ pri func decoder.normal_hfilter_mb_16_arm_neon!(workbuf: slice base.u8, q0_off: 
     var q3_lo : base.arm_neon_u8x8
 
     // u8x16 pixel columns for filter.
-    var p3        : base.arm_neon_u8x16
-    var p2        : base.arm_neon_u8x16
-    var p1        : base.arm_neon_u8x16
-    var p0        : base.arm_neon_u8x16
-    var q0        : base.arm_neon_u8x16
-    var q1        : base.arm_neon_u8x16
-    var q2        : base.arm_neon_u8x16
-    var q3        : base.arm_neon_u8x16
+    var p3 : base.arm_neon_u8x16
+    var p2 : base.arm_neon_u8x16
+    var p1 : base.arm_neon_u8x16
+    var p0 : base.arm_neon_u8x16
+    var q0 : base.arm_neon_u8x16
+    var q1 : base.arm_neon_u8x16
+    var q2 : base.arm_neon_u8x16
+    var q3 : base.arm_neon_u8x16
 
     // Filter constants and temporaries.
     var zero      : base.arm_neon_u8x16
@@ -2608,14 +2608,14 @@ pri func decoder.normal_hfilter_inner_16_arm_neon!(workbuf: slice base.u8, q0_of
     var q2_lo : base.arm_neon_u8x8
     var q3_lo : base.arm_neon_u8x8
 
-    var p3        : base.arm_neon_u8x16
-    var p2        : base.arm_neon_u8x16
-    var p1        : base.arm_neon_u8x16
-    var p0        : base.arm_neon_u8x16
-    var q0        : base.arm_neon_u8x16
-    var q1        : base.arm_neon_u8x16
-    var q2        : base.arm_neon_u8x16
-    var q3        : base.arm_neon_u8x16
+    var p3 : base.arm_neon_u8x16
+    var p2 : base.arm_neon_u8x16
+    var p1 : base.arm_neon_u8x16
+    var p0 : base.arm_neon_u8x16
+    var q0 : base.arm_neon_u8x16
+    var q1 : base.arm_neon_u8x16
+    var q2 : base.arm_neon_u8x16
+    var q3 : base.arm_neon_u8x16
 
     var zero      : base.arm_neon_u8x16
     var sign_bit  : base.arm_neon_u8x16

@@ -187,10 +187,10 @@ pri func decoder.idct_add!(dst: slice base.u8, stride: base.u32, coeff_offset: b
 pri func decoder.idct_dc_add!(dst: slice base.u8, stride: base.u32, coeff_offset: base.u32[..= 384]),
         choosy,
 {
-    var dc   : base.u32
-    var row  : base.u32
-    var idx  : base.u64
-    var val  : base.u32
+    var dc  : base.u32
+    var row : base.u32
+    var idx : base.u64
+    var val : base.u32
 
     dc = this.asr3!(v: this.mb_coeffs[args.coeff_offset] ~mod+ 4)
     this.mb_coeffs[args.coeff_offset] = 0

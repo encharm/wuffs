@@ -38,15 +38,15 @@ pri func decoder.apply_simple_filter_all!(workbuf: slice base.u8) {
 
 // apply_simple_filter_row! applies the simple loop filter to a single MB row.
 pri func decoder.apply_simple_filter_row!(workbuf: slice base.u8, mby: base.u32) {
-    var mbx      : base.u32
-    var mb_idx   : base.u32
-    var f_level  : base.u32
+    var mbx       : base.u32
+    var mb_idx    : base.u32
+    var f_level   : base.u32
     var has_inner : base.bool
-    var mb_lim   : base.u32
-    var sub_lim  : base.u32
-    var y_off    : base.u64
-    var r        : base.u32
-    var idx      : base.u64
+    var mb_lim    : base.u32
+    var sub_lim   : base.u32
+    var y_off     : base.u64
+    var r         : base.u32
+    var idx       : base.u64
 
     mbx = 0
     while mbx < this.mb_width {
@@ -355,21 +355,21 @@ pri func decoder.normal_hfilter_inner_uv!(workbuf: slice base.u8,
 // q0_idx is the index of q0 (first pixel inside the edge).
 // step is the distance between pixels across the edge (1=vertical, stride=horizontal).
 pri func decoder.filter2!(workbuf: slice base.u8, q0_idx: base.u64, step: base.u64, limit: base.u32) {
-    var p1_idx : base.u64
-    var p0_idx : base.u64
-    var q1_idx : base.u64
-    var p1     : base.u32
-    var p0     : base.u32
-    var q0     : base.u32
-    var q1     : base.u32
-    var dp0q0  : base.u32
-    var dp1q1  : base.u32
-    var thresh : base.u32
-    var a      : base.u32
-    var a1     : base.u32
-    var a2     : base.u32
+    var p1_idx  : base.u64
+    var p0_idx  : base.u64
+    var q1_idx  : base.u64
+    var p1      : base.u32
+    var p0      : base.u32
+    var q0      : base.u32
+    var q1      : base.u32
+    var dp0q0   : base.u32
+    var dp1q1   : base.u32
+    var thresh  : base.u32
+    var a       : base.u32
+    var a1      : base.u32
+    var a2      : base.u32
     var pq_diff : base.u32
-    var val    : base.u32
+    var val     : base.u32
 
     // Compute pixel indices: p1, p0 | q0, q1.
     if args.q0_idx < args.step {
@@ -535,15 +535,15 @@ pri func decoder.apply_normal_filter_all!(workbuf: slice base.u8) {
 
 // apply_normal_filter_row! applies the normal loop filter to a single MB row.
 pri func decoder.apply_normal_filter_row!(workbuf: slice base.u8, mby: base.u32) {
-    var mbx      : base.u32
-    var mb_idx   : base.u32
-    var f_level  : base.u32
-    var f_ilevel : base.u32
-    var f_hlevel : base.u32
+    var mbx       : base.u32
+    var mb_idx    : base.u32
+    var f_level   : base.u32
+    var f_ilevel  : base.u32
+    var f_hlevel  : base.u32
     var has_inner : base.bool
-    var y_off    : base.u64
-    var u_off    : base.u64
-    var v_off    : base.u64
+    var y_off     : base.u64
+    var u_off     : base.u64
+    var v_off     : base.u64
 
     mbx = 0
     while mbx < this.mb_width {

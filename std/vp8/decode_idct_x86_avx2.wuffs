@@ -58,12 +58,12 @@ pri func decoder.idct_add_pair_x86_avx2!(dst: slice base.u8, stride: base.u32,
     var ts2 : base.x86_m256i
     var ts3 : base.x86_m256i
 
-    var oa     : base.x86_m128i
-    var ob     : base.x86_m128i
+    var oa : base.x86_m128i
+    var ob : base.x86_m128i
 
-    var off_a     : base.u32[..= 384]
-    var off_b     : base.u32[..= 384]
-    var i         : base.u32
+    var off_a : base.u32[..= 384]
+    var off_b : base.u32[..= 384]
+    var i     : base.u32
 
     off_a = args.coeff_offset_a
     off_b = args.coeff_offset_b

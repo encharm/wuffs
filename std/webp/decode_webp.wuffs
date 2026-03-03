@@ -46,10 +46,10 @@ pub struct decoder? implements base.image_decoder(
 
         is_vp8_lossy : base.bool,
         is_vp8x      : base.bool,
-        has_alpha     : base.bool,
+        has_alpha    : base.bool,
 
         // VP8X-calculated workbuf length (VP8 Y/U/V planes + optional alpha).
-        vp8x_workbuf_len : base.u64,
+        vp8x_workbuf_len       : base.u64,
         vp8l_alpha_workbuf_len : base.u64,
 
         frame_config_io_position : base.u64,
@@ -156,7 +156,7 @@ pub struct decoder? implements base.image_decoder(
         // tree ht's primary table within huffman_tables[hg].
         // Index 1024 is a scratch slot for discarding unused trees
         // during compacted Huffman group decode.
-        huffman_tables : array[1025] array[4096] base.u32,
+        huffman_tables             : array[1025] array[4096] base.u32,
         huffman_table_base_offsets : array[1025] array[5] base.u16,
 
         // Per Huffman group: 0=normal, 1=trivial_literal (R/B/A are
@@ -456,23 +456,23 @@ pub func decoder.decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reader, 
 }
 
 pri func decoder.do_decode_frame_vp8x?(dst: ptr base.pixel_buffer, src: base.io_reader, blend: base.pixel_blend, workbuf: slice base.u8, opts: nptr base.decode_frame_options) {
-    var c32            : base.u32
-    var chunk_length   : base.u32
-    var chunk_padding  : base.bool
-    var status         : base.status
-    var r_mark         : base.u64
-    var alpha_offset   : base.u64
-    var alph_length    : base.u32
-    var alph_header    : base.u8
-    var alph_comp      : base.u8
-    var alph_filter    : base.u8
-    var alpha_i        : base.u64
-    var alpha_n        : base.u64
-    var y              : base.u32
-    var x              : base.u32
-    var tab            : table base.u8
-    var row            : slice base.u8
-    var row_idx        : base.u64
+    var c32           : base.u32
+    var chunk_length  : base.u32
+    var chunk_padding : base.bool
+    var status        : base.status
+    var r_mark        : base.u64
+    var alpha_offset  : base.u64
+    var alph_length   : base.u32
+    var alph_header   : base.u8
+    var alph_comp     : base.u8
+    var alph_filter   : base.u8
+    var alpha_i       : base.u64
+    var alpha_n       : base.u64
+    var y             : base.u32
+    var x             : base.u32
+    var tab           : table base.u8
+    var row           : slice base.u8
+    var row_idx       : base.u64
 
     if this.call_sequence == 0x40 {
         // No-op.
@@ -683,9 +683,9 @@ pri func decoder.do_decode_frame_vp8x?(dst: ptr base.pixel_buffer, src: base.io_
 }
 
 pri func decoder.apply_alpha_filter_horizontal!(workbuf: slice base.u8, alpha_offset: base.u64) {
-    var y : base.u32
-    var x : base.u32
-    var i : base.u64
+    var y    : base.u32
+    var x    : base.u32
+    var i    : base.u64
     var prev : base.u8
 
     y = 0

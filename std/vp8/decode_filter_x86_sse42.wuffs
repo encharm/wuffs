@@ -141,11 +141,11 @@ pri func decoder.simple_vfilter_16_x86_sse42!(workbuf: slice base.u8, q0_off: ba
 
     // delta = sat_i8(3*(q0-p0) + sat_i8(p1-q1))
     // Accumulate via saturating adds to avoid overflow.
-    t1 = p1s._mm_subs_epi8(b: q1s)       // p1 - q1 (saturating i8)
-    t2 = q0._mm_subs_epi8(b: p0)         // q0 - p0
-    t1 = t1._mm_adds_epi8(b: t2)         // (p1-q1) + 1*(q0-p0)
-    t1 = t1._mm_adds_epi8(b: t2)         // (p1-q1) + 2*(q0-p0)
-    delta = t1._mm_adds_epi8(b: t2)      // (p1-q1) + 3*(q0-p0)
+    t1 = p1s._mm_subs_epi8(b: q1s)  // p1 - q1 (saturating i8)
+    t2 = q0._mm_subs_epi8(b: p0)  // q0 - p0
+    t1 = t1._mm_adds_epi8(b: t2)  // (p1-q1) + 1*(q0-p0)
+    t1 = t1._mm_adds_epi8(b: t2)  // (p1-q1) + 2*(q0-p0)
+    delta = t1._mm_adds_epi8(b: t2)  // (p1-q1) + 3*(q0-p0)
 
     // Mask: only apply filter where NeedsFilter passed.
     delta = delta._mm_and_si128(b: mask)
@@ -370,12 +370,12 @@ pri func decoder.normal_vfilter_inner_16_x86_sse42!(workbuf: slice base.u8, q0_o
     // ---- Combined delta ----
     // HEV: delta = 3*(q0-p0) + (p1-q1)    [filter2]
     // !HEV: delta = 3*(q0-p0)              [filter4 uses no p1-q1]
-    t1 = p1._mm_subs_epi8(b: q1)                // p1-q1 (sat i8)
-    t1 = not_hev._mm_andnot_si128(b: t1)        // zero where !HEV
-    t2 = q0._mm_subs_epi8(b: p0)                // q0-p0
+    t1 = p1._mm_subs_epi8(b: q1)  // p1-q1 (sat i8)
+    t1 = not_hev._mm_andnot_si128(b: t1)  // zero where !HEV
+    t2 = q0._mm_subs_epi8(b: p0)  // q0-p0
     t1 = t1._mm_adds_epi8(b: t2)
     t1 = t1._mm_adds_epi8(b: t2)
-    delta = t1._mm_adds_epi8(b: t2)              // 3*(q0-p0) + hev*(p1-q1)
+    delta = t1._mm_adds_epi8(b: t2)  // 3*(q0-p0) + hev*(p1-q1)
     delta = delta._mm_and_si128(b: mask)
 
     // ---- v4 = SignedShift(delta+4, 3), v3 = SignedShift(delta+3, 3) ----
@@ -1036,8 +1036,8 @@ pri func decoder.normal_hfilter_mb_16_x86_sse42!(workbuf: slice base.u8, q0_off:
         level: base.u32, ilevel: base.u32, hlevel: base.u32),
         choose cpu_arch >= x86_sse42,
 {
-    var util : base.x86_sse42_utility
-    var wb   : slice base.u8
+    var util   : base.x86_sse42_utility
+    var wb     : slice base.u8
     var stride : base.u64
 
     // Row load temporaries.
@@ -1063,14 +1063,14 @@ pri func decoder.normal_hfilter_mb_16_x86_sse42!(workbuf: slice base.u8, q0_off:
     var g7 : base.x86_m128i
 
     // Pixel columns after forward transpose.
-    var p3        : base.x86_m128i
-    var p2        : base.x86_m128i
-    var p1        : base.x86_m128i
-    var p0        : base.x86_m128i
-    var q0        : base.x86_m128i
-    var q1        : base.x86_m128i
-    var q2        : base.x86_m128i
-    var q3        : base.x86_m128i
+    var p3 : base.x86_m128i
+    var p2 : base.x86_m128i
+    var p1 : base.x86_m128i
+    var p0 : base.x86_m128i
+    var q0 : base.x86_m128i
+    var q1 : base.x86_m128i
+    var q2 : base.x86_m128i
+    var q3 : base.x86_m128i
 
     // Filter constants.
     var zero      : base.x86_m128i
@@ -1087,23 +1087,23 @@ pri func decoder.normal_hfilter_mb_16_x86_sse42!(workbuf: slice base.u8, q0_off:
     var k9        : base.x86_m128i
 
     // Filter temporaries.
-    var mask      : base.x86_m128i
-    var not_hev   : base.x86_m128i
-    var delta     : base.x86_m128i
-    var v3        : base.x86_m128i
-    var v4        : base.x86_m128i
-    var a1        : base.x86_m128i
-    var a2        : base.x86_m128i
-    var a3        : base.x86_m128i
-    var t1        : base.x86_m128i
-    var t2        : base.x86_m128i
-    var t3        : base.x86_m128i
-    var lo        : base.x86_m128i
-    var hi        : base.x86_m128i
-    var d_lo      : base.x86_m128i
-    var d_hi      : base.x86_m128i
-    var p0_adj    : base.x86_m128i
-    var q0_adj    : base.x86_m128i
+    var mask    : base.x86_m128i
+    var not_hev : base.x86_m128i
+    var delta   : base.x86_m128i
+    var v3      : base.x86_m128i
+    var v4      : base.x86_m128i
+    var a1      : base.x86_m128i
+    var a2      : base.x86_m128i
+    var a3      : base.x86_m128i
+    var t1      : base.x86_m128i
+    var t2      : base.x86_m128i
+    var t3      : base.x86_m128i
+    var lo      : base.x86_m128i
+    var hi      : base.x86_m128i
+    var d_lo    : base.x86_m128i
+    var d_hi    : base.x86_m128i
+    var p0_adj  : base.x86_m128i
+    var q0_adj  : base.x86_m128i
 
     stride = this.y_stride as base.u64
     if stride < 8 {
@@ -1550,8 +1550,8 @@ pri func decoder.normal_hfilter_mb_8_x86_sse42!(workbuf: slice base.u8, q0_off: 
         level: base.u32, ilevel: base.u32, hlevel: base.u32),
         choose cpu_arch >= x86_sse42,
 {
-    var util : base.x86_sse42_utility
-    var wb   : slice base.u8
+    var util   : base.x86_sse42_utility
+    var wb     : slice base.u8
     var stride : base.u64
 
     // Row load temporaries.
@@ -1569,14 +1569,14 @@ pri func decoder.normal_hfilter_mb_8_x86_sse42!(workbuf: slice base.u8, q0_off: 
     var g3 : base.x86_m128i
 
     // Pixel columns after forward transpose.
-    var p3        : base.x86_m128i
-    var p2        : base.x86_m128i
-    var p1        : base.x86_m128i
-    var p0        : base.x86_m128i
-    var q0        : base.x86_m128i
-    var q1        : base.x86_m128i
-    var q2        : base.x86_m128i
-    var q3        : base.x86_m128i
+    var p3 : base.x86_m128i
+    var p2 : base.x86_m128i
+    var p1 : base.x86_m128i
+    var p0 : base.x86_m128i
+    var q0 : base.x86_m128i
+    var q1 : base.x86_m128i
+    var q2 : base.x86_m128i
+    var q3 : base.x86_m128i
 
     // Filter constants.
     var zero      : base.x86_m128i
@@ -1593,23 +1593,23 @@ pri func decoder.normal_hfilter_mb_8_x86_sse42!(workbuf: slice base.u8, q0_off: 
     var k9        : base.x86_m128i
 
     // Filter temporaries.
-    var mask      : base.x86_m128i
-    var not_hev   : base.x86_m128i
-    var delta     : base.x86_m128i
-    var v3        : base.x86_m128i
-    var v4        : base.x86_m128i
-    var a1        : base.x86_m128i
-    var a2        : base.x86_m128i
-    var a3        : base.x86_m128i
-    var t1        : base.x86_m128i
-    var t2        : base.x86_m128i
-    var t3        : base.x86_m128i
-    var lo        : base.x86_m128i
-    var hi        : base.x86_m128i
-    var d_lo      : base.x86_m128i
-    var d_hi      : base.x86_m128i
-    var p0_adj    : base.x86_m128i
-    var q0_adj    : base.x86_m128i
+    var mask    : base.x86_m128i
+    var not_hev : base.x86_m128i
+    var delta   : base.x86_m128i
+    var v3      : base.x86_m128i
+    var v4      : base.x86_m128i
+    var a1      : base.x86_m128i
+    var a2      : base.x86_m128i
+    var a3      : base.x86_m128i
+    var t1      : base.x86_m128i
+    var t2      : base.x86_m128i
+    var t3      : base.x86_m128i
+    var lo      : base.x86_m128i
+    var hi      : base.x86_m128i
+    var d_lo    : base.x86_m128i
+    var d_hi    : base.x86_m128i
+    var p0_adj  : base.x86_m128i
+    var q0_adj  : base.x86_m128i
 
     stride = this.uv_stride as base.u64
     if stride < 8 {
@@ -1914,8 +1914,8 @@ pri func decoder.normal_hfilter_inner_16_x86_sse42!(workbuf: slice base.u8, q0_o
         level: base.u32, ilevel: base.u32, hlevel: base.u32),
         choose cpu_arch >= x86_sse42,
 {
-    var util : base.x86_sse42_utility
-    var wb   : slice base.u8
+    var util   : base.x86_sse42_utility
+    var wb     : slice base.u8
     var stride : base.u64
 
     var ra : base.x86_m128i
@@ -1938,14 +1938,14 @@ pri func decoder.normal_hfilter_inner_16_x86_sse42!(workbuf: slice base.u8, q0_o
     var g6 : base.x86_m128i
     var g7 : base.x86_m128i
 
-    var p3        : base.x86_m128i
-    var p2        : base.x86_m128i
-    var p1        : base.x86_m128i
-    var p0        : base.x86_m128i
-    var q0        : base.x86_m128i
-    var q1        : base.x86_m128i
-    var q2        : base.x86_m128i
-    var q3        : base.x86_m128i
+    var p3 : base.x86_m128i
+    var p2 : base.x86_m128i
+    var p1 : base.x86_m128i
+    var p0 : base.x86_m128i
+    var q0 : base.x86_m128i
+    var q1 : base.x86_m128i
+    var q2 : base.x86_m128i
+    var q3 : base.x86_m128i
 
     var zero      : base.x86_m128i
     var sign_bit  : base.x86_m128i
@@ -1957,17 +1957,17 @@ pri func decoder.normal_hfilter_inner_16_x86_sse42!(workbuf: slice base.u8, q0_o
     var k3        : base.x86_m128i
     var k4        : base.x86_m128i
 
-    var mask      : base.x86_m128i
-    var not_hev   : base.x86_m128i
-    var delta     : base.x86_m128i
-    var v3        : base.x86_m128i
-    var v4        : base.x86_m128i
-    var a3        : base.x86_m128i
-    var t1        : base.x86_m128i
-    var t2        : base.x86_m128i
-    var t3        : base.x86_m128i
-    var lo        : base.x86_m128i
-    var hi        : base.x86_m128i
+    var mask    : base.x86_m128i
+    var not_hev : base.x86_m128i
+    var delta   : base.x86_m128i
+    var v3      : base.x86_m128i
+    var v4      : base.x86_m128i
+    var a3      : base.x86_m128i
+    var t1      : base.x86_m128i
+    var t2      : base.x86_m128i
+    var t3      : base.x86_m128i
+    var lo      : base.x86_m128i
+    var hi      : base.x86_m128i
 
     stride = this.y_stride as base.u64
     if stride < 8 {
@@ -2388,8 +2388,8 @@ pri func decoder.normal_hfilter_inner_8_x86_sse42!(workbuf: slice base.u8, q0_of
         level: base.u32, ilevel: base.u32, hlevel: base.u32),
         choose cpu_arch >= x86_sse42,
 {
-    var util : base.x86_sse42_utility
-    var wb   : slice base.u8
+    var util   : base.x86_sse42_utility
+    var wb     : slice base.u8
     var stride : base.u64
 
     var ra : base.x86_m128i
@@ -2404,14 +2404,14 @@ pri func decoder.normal_hfilter_inner_8_x86_sse42!(workbuf: slice base.u8, q0_of
     var g2 : base.x86_m128i
     var g3 : base.x86_m128i
 
-    var p3        : base.x86_m128i
-    var p2        : base.x86_m128i
-    var p1        : base.x86_m128i
-    var p0        : base.x86_m128i
-    var q0        : base.x86_m128i
-    var q1        : base.x86_m128i
-    var q2        : base.x86_m128i
-    var q3        : base.x86_m128i
+    var p3 : base.x86_m128i
+    var p2 : base.x86_m128i
+    var p1 : base.x86_m128i
+    var p0 : base.x86_m128i
+    var q0 : base.x86_m128i
+    var q1 : base.x86_m128i
+    var q2 : base.x86_m128i
+    var q3 : base.x86_m128i
 
     var zero      : base.x86_m128i
     var sign_bit  : base.x86_m128i
@@ -2423,17 +2423,17 @@ pri func decoder.normal_hfilter_inner_8_x86_sse42!(workbuf: slice base.u8, q0_of
     var k3        : base.x86_m128i
     var k4        : base.x86_m128i
 
-    var mask      : base.x86_m128i
-    var not_hev   : base.x86_m128i
-    var delta     : base.x86_m128i
-    var v3        : base.x86_m128i
-    var v4        : base.x86_m128i
-    var a3        : base.x86_m128i
-    var t1        : base.x86_m128i
-    var t2        : base.x86_m128i
-    var t3        : base.x86_m128i
-    var lo        : base.x86_m128i
-    var hi        : base.x86_m128i
+    var mask    : base.x86_m128i
+    var not_hev : base.x86_m128i
+    var delta   : base.x86_m128i
+    var v3      : base.x86_m128i
+    var v4      : base.x86_m128i
+    var a3      : base.x86_m128i
+    var t1      : base.x86_m128i
+    var t2      : base.x86_m128i
+    var t3      : base.x86_m128i
+    var lo      : base.x86_m128i
+    var hi      : base.x86_m128i
 
     stride = this.uv_stride as base.u64
     if stride < 8 {

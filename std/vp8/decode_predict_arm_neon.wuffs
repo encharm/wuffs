@@ -19,14 +19,14 @@ pri func decoder.predict_16x16_arm_neon!(workbuf: slice base.u8, mode: base.u8[.
     var util : base.arm_neon_utility
 
     // Reference pixel arrays (pre-loaded before reslicing workbuf).
-    var left_arr  : array[16] base.u8
-    var tl        : base.u8
-    var s         : slice base.u8
+    var left_arr : array[16] base.u8
+    var tl       : base.u8
+    var s        : slice base.u8
 
     // NEON registers.
-    var above    : base.arm_neon_u8x16
-    var diff_u8  : base.arm_neon_u8x16
-    var result   : base.arm_neon_u8x16
+    var above   : base.arm_neon_u8x16
+    var diff_u8 : base.arm_neon_u8x16
+    var result  : base.arm_neon_u8x16
 
     var y_off    : base.u64
     var idx      : base.u64
@@ -186,14 +186,14 @@ pri func decoder.predict_8x8_arm_neon!(workbuf: slice base.u8, mode: base.u8[..=
     var util : base.arm_neon_utility
 
     // Reference pixel arrays (pre-loaded before reslicing workbuf).
-    var left_arr  : array[8] base.u8
-    var tl        : base.u8
-    var s         : slice base.u8
+    var left_arr : array[8] base.u8
+    var tl       : base.u8
+    var s        : slice base.u8
 
     // NEON registers.
-    var above    : base.arm_neon_u8x8
-    var diff_u8  : base.arm_neon_u8x8
-    var result   : base.arm_neon_u8x8
+    var above   : base.arm_neon_u8x8
+    var diff_u8 : base.arm_neon_u8x8
+    var result  : base.arm_neon_u8x8
 
     var uv_off   : base.u64
     var idx      : base.u64

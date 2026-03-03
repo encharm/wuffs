@@ -54,19 +54,19 @@ pri func decoder.apply_transform_subtract_green_x86_avx2!(pix: slice base.u8),
 pri func decoder.apply_transform_cross_color_x86_avx2!(pix: slice base.u8, tile_data: roslice base.u8),
         choose cpu_arch >= x86_avx2,
 {
-    var tile_size_log2  : base.u32[..= 9]
-    var tiles_per_row   : base.u32[..= 16895]
-    var tmask           : base.u32[..= 0x1FF]
+    var tile_size_log2    : base.u32[..= 9]
+    var tiles_per_row     : base.u32[..= 16895]
+    var tmask             : base.u32[..= 0x1FF]
     var do_subtract_green : base.bool
-    var y              : base.u32[..= 0x4000]
-    var x              : base.u32[..= 0x4008]
-    var t              : base.u64
-    var tile_data      : roslice base.u8
-    var x_end          : base.u32
+    var y                 : base.u32[..= 0x4000]
+    var x                 : base.u32[..= 0x4008]
+    var t                 : base.u64
+    var tile_data         : roslice base.u8
+    var x_end             : base.u32
 
-    var g2r : base.u32
-    var g2b : base.u32
-    var r2b : base.u32
+    var g2r        : base.u32
+    var g2b        : base.u32
+    var r2b        : base.u32
     var raw_g2r    : base.u8
     var raw_g2b    : base.u8
     var raw_r2b    : base.u8
@@ -90,16 +90,15 @@ pri func decoder.apply_transform_cross_color_x86_avx2!(pix: slice base.u8, tile_
     var delta_b_packed : base.x86_m256i
 
     // Shuffle masks (same for both 128-bit lanes).
-    var green_shuf   : base.x86_m256i
-    var red_shuf     : base.x86_m256i
-    var r_scatter    : base.x86_m256i
-    var b_scatter    : base.x86_m256i
+    var green_shuf : base.x86_m256i
+    var red_shuf   : base.x86_m256i
+    var r_scatter  : base.x86_m256i
+    var b_scatter  : base.x86_m256i
 
     // Fused subtract_green support.
-    var sg_mask      : base.x86_m256i
-    var sg_green     : base.x86_m256i
-    var sg_br        : base.x86_m256i
-
+    var sg_mask  : base.x86_m256i
+    var sg_green : base.x86_m256i
+    var sg_br    : base.x86_m256i
 
     tile_size_log2 = this.transform_tile_size_log2[1] as base.u32
     tiles_per_row = (this.width + (((1 as base.u32) << tile_size_log2) - 1)) >> tile_size_log2
@@ -310,11 +309,11 @@ pri func decoder.apply_transform_predictor_x86_avx2!(pix: slice base.u8, tile_da
     var mode           : base.u8[..= 0x0F]
     var x_end          : base.u32
 
-    var util        : base.x86_avx2_utility
-    var avx_pix     : base.x86_m256i
-    var avx_prev    : base.x86_m256i
-    var avx_opaque  : base.x86_m256i
-    var avx_carry   : base.x86_m256i
+    var util       : base.x86_avx2_utility
+    var avx_pix    : base.x86_m256i
+    var avx_prev   : base.x86_m256i
+    var avx_opaque : base.x86_m256i
+    var avx_carry  : base.x86_m256i
 
     var l0    : base.u32[..= 0xFF]
     var l1    : base.u32[..= 0xFF]
@@ -461,9 +460,9 @@ pri func decoder.apply_transform_predictor_x86_avx2!(pix: slice base.u8, tile_da
                     }
                 }
 
-            // AVX2 prefix-sum for mode 1 (L/left): 8 pixels at a time.
-            // Uses Hillis-Steele parallel scan within 128-bit lanes
-            // (2 shift+add steps) plus a cross-lane fixup.
+                // AVX2 prefix-sum for mode 1 (L/left): 8 pixels at a time.
+                // Uses Hillis-Steele parallel scan within 128-bit lanes
+                // (2 shift+add steps) plus a cross-lane fixup.
             } else if mode == 1 {
                 if (x_end >= 8) and (curr_row.length() >= 4) {
                     avx_carry = util.make_m256i_repeat_u32(a: curr_row.peek_u32le())
@@ -516,7 +515,7 @@ pri func decoder.apply_transform_predictor_x86_avx2!(pix: slice base.u8, tile_da
                     x += 1
                 }
 
-            // AVX2 path for top-only modes without averaging (2, 3, 4).
+                // AVX2 path for top-only modes without averaging (2, 3, 4).
             } else if (mode == 2) or (mode == 3) or (mode == 4) {
                 if x_end >= 8 {
                     while (x < this.width) and (x <= (x_end - 8)) and (curr_row.length() >= 36) and (prev_row.length() >= 40),

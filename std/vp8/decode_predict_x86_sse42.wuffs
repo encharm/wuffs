@@ -19,17 +19,17 @@ pri func decoder.predict_16x16_x86_sse42!(workbuf: slice base.u8, mode: base.u8[
     var util : base.x86_sse42_utility
 
     // Reference pixel arrays (pre-loaded before reslicing workbuf).
-    var left_arr  : array[16] base.u8
-    var tl        : base.u8
-    var s         : slice base.u8
+    var left_arr : array[16] base.u8
+    var tl       : base.u8
+    var s        : slice base.u8
 
     // SSE registers.
-    var zero     : base.x86_m128i
-    var above    : base.x86_m128i
-    var diff     : base.x86_m128i
-    var result   : base.x86_m128i
-    var sad      : base.x86_m128i
-    var tmp      : base.x86_m128i
+    var zero   : base.x86_m128i
+    var above  : base.x86_m128i
+    var diff   : base.x86_m128i
+    var result : base.x86_m128i
+    var sad    : base.x86_m128i
+    var tmp    : base.x86_m128i
 
     var y_off : base.u64
     var idx   : base.u64
@@ -191,16 +191,16 @@ pri func decoder.predict_8x8_x86_sse42!(workbuf: slice base.u8, mode: base.u8[..
     var util : base.x86_sse42_utility
 
     // Reference pixel arrays (pre-loaded before reslicing workbuf).
-    var left_arr  : array[8] base.u8
-    var tl        : base.u8
-    var s         : slice base.u8
+    var left_arr : array[8] base.u8
+    var tl       : base.u8
+    var s        : slice base.u8
 
     // SSE registers.
-    var zero     : base.x86_m128i
-    var above    : base.x86_m128i
-    var diff     : base.x86_m128i
-    var result   : base.x86_m128i
-    var sad      : base.x86_m128i
+    var zero   : base.x86_m128i
+    var above  : base.x86_m128i
+    var diff   : base.x86_m128i
+    var result : base.x86_m128i
+    var sad    : base.x86_m128i
 
     var uv_off : base.u64
     var idx    : base.u64

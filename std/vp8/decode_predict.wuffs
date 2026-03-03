@@ -389,29 +389,29 @@ pri func decoder.predict_8x8!(workbuf: slice base.u8, mode: base.u8[..= 3], plan
 // Modes (VP8 spec ordering):
 //   0=DC, 1=TM, 2=VE, 3=HE, 4=LD, 5=RD, 6=VR, 7=VL, 8=HD, 9=HU
 pri func decoder.predict_4x4!(workbuf: slice base.u8, block_idx: base.u32[..= 15], mode: base.u8) {
-    var y_off   : base.u64
-    var bx      : base.u32
-    var by      : base.u32
-    var idx     : base.u64
-    var stride  : base.u64
-    var has_top : base.bool
-    var has_left: base.bool
-    var tl      : base.u32
-    var a0      : base.u32
-    var a1      : base.u32
-    var a2      : base.u32
-    var a3      : base.u32
-    var a4      : base.u32
-    var a5      : base.u32
-    var a6      : base.u32
-    var a7      : base.u32
-    var l0      : base.u32
-    var l1      : base.u32
-    var l2      : base.u32
-    var l3      : base.u32
-    var dc      : base.u32
-    var s       : slice base.u8
-    var above4  : base.u32
+    var y_off    : base.u64
+    var bx       : base.u32
+    var by       : base.u32
+    var idx      : base.u64
+    var stride   : base.u64
+    var has_top  : base.bool
+    var has_left : base.bool
+    var tl       : base.u32
+    var a0       : base.u32
+    var a1       : base.u32
+    var a2       : base.u32
+    var a3       : base.u32
+    var a4       : base.u32
+    var a5       : base.u32
+    var a6       : base.u32
+    var a7       : base.u32
+    var l0       : base.u32
+    var l1       : base.u32
+    var l2       : base.u32
+    var l3       : base.u32
+    var dc       : base.u32
+    var s        : slice base.u8
+    var above4   : base.u32
 
     bx = args.block_idx & 3
     by = args.block_idx >> 2
@@ -517,118 +517,118 @@ pri func decoder.predict_4x4!(workbuf: slice base.u8, block_idx: base.u32[..= 15
         dc = ((((((((a0 ~mod+ a1) ~mod+ a2) ~mod+ a3) ~mod+ l0) ~mod+ l1) ~mod+ l2) ~mod+ l3) ~mod+ 4)
         dc = (dc >> 3) & 0xFF
         this.pred4x4_store!(workbuf: args.workbuf, off: y_off,
-            v00: dc, v01: dc, v02: dc, v03: dc,
-            v10: dc, v11: dc, v12: dc, v13: dc,
-            v20: dc, v21: dc, v22: dc, v23: dc,
-            v30: dc, v31: dc, v32: dc, v33: dc)
+                v00: dc, v01: dc, v02: dc, v03: dc,
+                v10: dc, v11: dc, v12: dc, v13: dc,
+                v20: dc, v21: dc, v22: dc, v23: dc,
+                v30: dc, v31: dc, v32: dc, v33: dc)
     } else if args.mode == 1 {
         // TM: pred[r][c] = clamp(above[c] + left[r] - tl)
         this.pred4x4_store!(workbuf: args.workbuf, off: y_off,
-            v00: this.clip8(v: (a0 ~mod+ l0) ~mod- tl),
-            v01: this.clip8(v: (a1 ~mod+ l0) ~mod- tl),
-            v02: this.clip8(v: (a2 ~mod+ l0) ~mod- tl),
-            v03: this.clip8(v: (a3 ~mod+ l0) ~mod- tl),
-            v10: this.clip8(v: (a0 ~mod+ l1) ~mod- tl),
-            v11: this.clip8(v: (a1 ~mod+ l1) ~mod- tl),
-            v12: this.clip8(v: (a2 ~mod+ l1) ~mod- tl),
-            v13: this.clip8(v: (a3 ~mod+ l1) ~mod- tl),
-            v20: this.clip8(v: (a0 ~mod+ l2) ~mod- tl),
-            v21: this.clip8(v: (a1 ~mod+ l2) ~mod- tl),
-            v22: this.clip8(v: (a2 ~mod+ l2) ~mod- tl),
-            v23: this.clip8(v: (a3 ~mod+ l2) ~mod- tl),
-            v30: this.clip8(v: (a0 ~mod+ l3) ~mod- tl),
-            v31: this.clip8(v: (a1 ~mod+ l3) ~mod- tl),
-            v32: this.clip8(v: (a2 ~mod+ l3) ~mod- tl),
-            v33: this.clip8(v: (a3 ~mod+ l3) ~mod- tl))
+                v00: this.clip8(v: (a0 ~mod+ l0) ~mod- tl),
+                v01: this.clip8(v: (a1 ~mod+ l0) ~mod- tl),
+                v02: this.clip8(v: (a2 ~mod+ l0) ~mod- tl),
+                v03: this.clip8(v: (a3 ~mod+ l0) ~mod- tl),
+                v10: this.clip8(v: (a0 ~mod+ l1) ~mod- tl),
+                v11: this.clip8(v: (a1 ~mod+ l1) ~mod- tl),
+                v12: this.clip8(v: (a2 ~mod+ l1) ~mod- tl),
+                v13: this.clip8(v: (a3 ~mod+ l1) ~mod- tl),
+                v20: this.clip8(v: (a0 ~mod+ l2) ~mod- tl),
+                v21: this.clip8(v: (a1 ~mod+ l2) ~mod- tl),
+                v22: this.clip8(v: (a2 ~mod+ l2) ~mod- tl),
+                v23: this.clip8(v: (a3 ~mod+ l2) ~mod- tl),
+                v30: this.clip8(v: (a0 ~mod+ l3) ~mod- tl),
+                v31: this.clip8(v: (a1 ~mod+ l3) ~mod- tl),
+                v32: this.clip8(v: (a2 ~mod+ l3) ~mod- tl),
+                v33: this.clip8(v: (a3 ~mod+ l3) ~mod- tl))
     } else if args.mode == 2 {
         // VE: smoothed vertical prediction.
         // Each column uses a weighted 3-tap filter of the above pixels.
         this.pred4x4_store!(workbuf: args.workbuf, off: y_off,
-            v00: this.avg3(a: tl, b: a0, c: a1), v01: this.avg3(a: a0, b: a1, c: a2),
-            v02: this.avg3(a: a1, b: a2, c: a3), v03: this.avg3(a: a2, b: a3, c: a4),
-            v10: this.avg3(a: tl, b: a0, c: a1), v11: this.avg3(a: a0, b: a1, c: a2),
-            v12: this.avg3(a: a1, b: a2, c: a3), v13: this.avg3(a: a2, b: a3, c: a4),
-            v20: this.avg3(a: tl, b: a0, c: a1), v21: this.avg3(a: a0, b: a1, c: a2),
-            v22: this.avg3(a: a1, b: a2, c: a3), v23: this.avg3(a: a2, b: a3, c: a4),
-            v30: this.avg3(a: tl, b: a0, c: a1), v31: this.avg3(a: a0, b: a1, c: a2),
-            v32: this.avg3(a: a1, b: a2, c: a3), v33: this.avg3(a: a2, b: a3, c: a4))
+                v00: this.avg3(a: tl, b: a0, c: a1), v01: this.avg3(a: a0, b: a1, c: a2),
+                v02: this.avg3(a: a1, b: a2, c: a3), v03: this.avg3(a: a2, b: a3, c: a4),
+                v10: this.avg3(a: tl, b: a0, c: a1), v11: this.avg3(a: a0, b: a1, c: a2),
+                v12: this.avg3(a: a1, b: a2, c: a3), v13: this.avg3(a: a2, b: a3, c: a4),
+                v20: this.avg3(a: tl, b: a0, c: a1), v21: this.avg3(a: a0, b: a1, c: a2),
+                v22: this.avg3(a: a1, b: a2, c: a3), v23: this.avg3(a: a2, b: a3, c: a4),
+                v30: this.avg3(a: tl, b: a0, c: a1), v31: this.avg3(a: a0, b: a1, c: a2),
+                v32: this.avg3(a: a1, b: a2, c: a3), v33: this.avg3(a: a2, b: a3, c: a4))
     } else if args.mode == 3 {
         // HE: smoothed horizontal prediction.
         this.pred4x4_store!(workbuf: args.workbuf, off: y_off,
-            v00: this.avg3(a: tl, b: l0, c: l1), v01: this.avg3(a: tl, b: l0, c: l1),
-            v02: this.avg3(a: tl, b: l0, c: l1), v03: this.avg3(a: tl, b: l0, c: l1),
-            v10: this.avg3(a: l0, b: l1, c: l2), v11: this.avg3(a: l0, b: l1, c: l2),
-            v12: this.avg3(a: l0, b: l1, c: l2), v13: this.avg3(a: l0, b: l1, c: l2),
-            v20: this.avg3(a: l1, b: l2, c: l3), v21: this.avg3(a: l1, b: l2, c: l3),
-            v22: this.avg3(a: l1, b: l2, c: l3), v23: this.avg3(a: l1, b: l2, c: l3),
-            v30: this.avg3(a: l2, b: l3, c: l3), v31: this.avg3(a: l2, b: l3, c: l3),
-            v32: this.avg3(a: l2, b: l3, c: l3), v33: this.avg3(a: l2, b: l3, c: l3))
+                v00: this.avg3(a: tl, b: l0, c: l1), v01: this.avg3(a: tl, b: l0, c: l1),
+                v02: this.avg3(a: tl, b: l0, c: l1), v03: this.avg3(a: tl, b: l0, c: l1),
+                v10: this.avg3(a: l0, b: l1, c: l2), v11: this.avg3(a: l0, b: l1, c: l2),
+                v12: this.avg3(a: l0, b: l1, c: l2), v13: this.avg3(a: l0, b: l1, c: l2),
+                v20: this.avg3(a: l1, b: l2, c: l3), v21: this.avg3(a: l1, b: l2, c: l3),
+                v22: this.avg3(a: l1, b: l2, c: l3), v23: this.avg3(a: l1, b: l2, c: l3),
+                v30: this.avg3(a: l2, b: l3, c: l3), v31: this.avg3(a: l2, b: l3, c: l3),
+                v32: this.avg3(a: l2, b: l3, c: l3), v33: this.avg3(a: l2, b: l3, c: l3))
     } else if args.mode == 4 {
         // LD: Left-Down diagonal. Uses top + upper-right pixels.
         this.pred4x4_store!(workbuf: args.workbuf, off: y_off,
-            v00: this.avg3(a: a0, b: a1, c: a2), v01: this.avg3(a: a1, b: a2, c: a3),
-            v02: this.avg3(a: a2, b: a3, c: a4), v03: this.avg3(a: a3, b: a4, c: a5),
-            v10: this.avg3(a: a1, b: a2, c: a3), v11: this.avg3(a: a2, b: a3, c: a4),
-            v12: this.avg3(a: a3, b: a4, c: a5), v13: this.avg3(a: a4, b: a5, c: a6),
-            v20: this.avg3(a: a2, b: a3, c: a4), v21: this.avg3(a: a3, b: a4, c: a5),
-            v22: this.avg3(a: a4, b: a5, c: a6), v23: this.avg3(a: a5, b: a6, c: a7),
-            v30: this.avg3(a: a3, b: a4, c: a5), v31: this.avg3(a: a4, b: a5, c: a6),
-            v32: this.avg3(a: a5, b: a6, c: a7), v33: this.avg3(a: a6, b: a7, c: a7))
+                v00: this.avg3(a: a0, b: a1, c: a2), v01: this.avg3(a: a1, b: a2, c: a3),
+                v02: this.avg3(a: a2, b: a3, c: a4), v03: this.avg3(a: a3, b: a4, c: a5),
+                v10: this.avg3(a: a1, b: a2, c: a3), v11: this.avg3(a: a2, b: a3, c: a4),
+                v12: this.avg3(a: a3, b: a4, c: a5), v13: this.avg3(a: a4, b: a5, c: a6),
+                v20: this.avg3(a: a2, b: a3, c: a4), v21: this.avg3(a: a3, b: a4, c: a5),
+                v22: this.avg3(a: a4, b: a5, c: a6), v23: this.avg3(a: a5, b: a6, c: a7),
+                v30: this.avg3(a: a3, b: a4, c: a5), v31: this.avg3(a: a4, b: a5, c: a6),
+                v32: this.avg3(a: a5, b: a6, c: a7), v33: this.avg3(a: a6, b: a7, c: a7))
     } else if args.mode == 5 {
         // RD: Right-Down diagonal.
         this.pred4x4_store!(workbuf: args.workbuf, off: y_off,
-            v00: this.avg3(a: l0, b: tl, c: a0), v01: this.avg3(a: tl, b: a0, c: a1),
-            v02: this.avg3(a: a0, b: a1, c: a2), v03: this.avg3(a: a1, b: a2, c: a3),
-            v10: this.avg3(a: l1, b: l0, c: tl), v11: this.avg3(a: l0, b: tl, c: a0),
-            v12: this.avg3(a: tl, b: a0, c: a1), v13: this.avg3(a: a0, b: a1, c: a2),
-            v20: this.avg3(a: l2, b: l1, c: l0), v21: this.avg3(a: l1, b: l0, c: tl),
-            v22: this.avg3(a: l0, b: tl, c: a0), v23: this.avg3(a: tl, b: a0, c: a1),
-            v30: this.avg3(a: l3, b: l2, c: l1), v31: this.avg3(a: l2, b: l1, c: l0),
-            v32: this.avg3(a: l1, b: l0, c: tl), v33: this.avg3(a: l0, b: tl, c: a0))
+                v00: this.avg3(a: l0, b: tl, c: a0), v01: this.avg3(a: tl, b: a0, c: a1),
+                v02: this.avg3(a: a0, b: a1, c: a2), v03: this.avg3(a: a1, b: a2, c: a3),
+                v10: this.avg3(a: l1, b: l0, c: tl), v11: this.avg3(a: l0, b: tl, c: a0),
+                v12: this.avg3(a: tl, b: a0, c: a1), v13: this.avg3(a: a0, b: a1, c: a2),
+                v20: this.avg3(a: l2, b: l1, c: l0), v21: this.avg3(a: l1, b: l0, c: tl),
+                v22: this.avg3(a: l0, b: tl, c: a0), v23: this.avg3(a: tl, b: a0, c: a1),
+                v30: this.avg3(a: l3, b: l2, c: l1), v31: this.avg3(a: l2, b: l1, c: l0),
+                v32: this.avg3(a: l1, b: l0, c: tl), v33: this.avg3(a: l0, b: tl, c: a0))
     } else if args.mode == 6 {
         // VR: Vertical-Right diagonal.
         this.pred4x4_store!(workbuf: args.workbuf, off: y_off,
-            v00: this.avg2(a: tl, b: a0), v01: this.avg2(a: a0, b: a1),
-            v02: this.avg2(a: a1, b: a2), v03: this.avg2(a: a2, b: a3),
-            v10: this.avg3(a: l0, b: tl, c: a0), v11: this.avg3(a: tl, b: a0, c: a1),
-            v12: this.avg3(a: a0, b: a1, c: a2), v13: this.avg3(a: a1, b: a2, c: a3),
-            v20: this.avg3(a: l1, b: l0, c: tl), v21: this.avg2(a: tl, b: a0),
-            v22: this.avg2(a: a0, b: a1), v23: this.avg2(a: a1, b: a2),
-            v30: this.avg3(a: l2, b: l1, c: l0), v31: this.avg3(a: l0, b: tl, c: a0),
-            v32: this.avg3(a: tl, b: a0, c: a1), v33: this.avg3(a: a0, b: a1, c: a2))
+                v00: this.avg2(a: tl, b: a0), v01: this.avg2(a: a0, b: a1),
+                v02: this.avg2(a: a1, b: a2), v03: this.avg2(a: a2, b: a3),
+                v10: this.avg3(a: l0, b: tl, c: a0), v11: this.avg3(a: tl, b: a0, c: a1),
+                v12: this.avg3(a: a0, b: a1, c: a2), v13: this.avg3(a: a1, b: a2, c: a3),
+                v20: this.avg3(a: l1, b: l0, c: tl), v21: this.avg2(a: tl, b: a0),
+                v22: this.avg2(a: a0, b: a1), v23: this.avg2(a: a1, b: a2),
+                v30: this.avg3(a: l2, b: l1, c: l0), v31: this.avg3(a: l0, b: tl, c: a0),
+                v32: this.avg3(a: tl, b: a0, c: a1), v33: this.avg3(a: a0, b: a1, c: a2))
     } else if args.mode == 7 {
         // VL: Vertical-Left diagonal.
         this.pred4x4_store!(workbuf: args.workbuf, off: y_off,
-            v00: this.avg2(a: a0, b: a1), v01: this.avg2(a: a1, b: a2),
-            v02: this.avg2(a: a2, b: a3), v03: this.avg2(a: a3, b: a4),
-            v10: this.avg3(a: a0, b: a1, c: a2), v11: this.avg3(a: a1, b: a2, c: a3),
-            v12: this.avg3(a: a2, b: a3, c: a4), v13: this.avg3(a: a3, b: a4, c: a5),
-            v20: this.avg2(a: a1, b: a2), v21: this.avg2(a: a2, b: a3),
-            v22: this.avg2(a: a3, b: a4), v23: this.avg3(a: a4, b: a5, c: a6),
-            v30: this.avg3(a: a1, b: a2, c: a3), v31: this.avg3(a: a2, b: a3, c: a4),
-            v32: this.avg3(a: a3, b: a4, c: a5), v33: this.avg3(a: a5, b: a6, c: a7))
+                v00: this.avg2(a: a0, b: a1), v01: this.avg2(a: a1, b: a2),
+                v02: this.avg2(a: a2, b: a3), v03: this.avg2(a: a3, b: a4),
+                v10: this.avg3(a: a0, b: a1, c: a2), v11: this.avg3(a: a1, b: a2, c: a3),
+                v12: this.avg3(a: a2, b: a3, c: a4), v13: this.avg3(a: a3, b: a4, c: a5),
+                v20: this.avg2(a: a1, b: a2), v21: this.avg2(a: a2, b: a3),
+                v22: this.avg2(a: a3, b: a4), v23: this.avg3(a: a4, b: a5, c: a6),
+                v30: this.avg3(a: a1, b: a2, c: a3), v31: this.avg3(a: a2, b: a3, c: a4),
+                v32: this.avg3(a: a3, b: a4, c: a5), v33: this.avg3(a: a5, b: a6, c: a7))
     } else if args.mode == 8 {
         // HD: Horizontal-Down diagonal.
         this.pred4x4_store!(workbuf: args.workbuf, off: y_off,
-            v00: this.avg2(a: l0, b: tl), v01: this.avg3(a: l0, b: tl, c: a0),
-            v02: this.avg3(a: tl, b: a0, c: a1), v03: this.avg3(a: a0, b: a1, c: a2),
-            v10: this.avg2(a: l1, b: l0), v11: this.avg3(a: l1, b: l0, c: tl),
-            v12: this.avg2(a: l0, b: tl), v13: this.avg3(a: l0, b: tl, c: a0),
-            v20: this.avg2(a: l2, b: l1), v21: this.avg3(a: l2, b: l1, c: l0),
-            v22: this.avg2(a: l1, b: l0), v23: this.avg3(a: l1, b: l0, c: tl),
-            v30: this.avg2(a: l3, b: l2), v31: this.avg3(a: l3, b: l2, c: l1),
-            v32: this.avg2(a: l2, b: l1), v33: this.avg3(a: l2, b: l1, c: l0))
+                v00: this.avg2(a: l0, b: tl), v01: this.avg3(a: l0, b: tl, c: a0),
+                v02: this.avg3(a: tl, b: a0, c: a1), v03: this.avg3(a: a0, b: a1, c: a2),
+                v10: this.avg2(a: l1, b: l0), v11: this.avg3(a: l1, b: l0, c: tl),
+                v12: this.avg2(a: l0, b: tl), v13: this.avg3(a: l0, b: tl, c: a0),
+                v20: this.avg2(a: l2, b: l1), v21: this.avg3(a: l2, b: l1, c: l0),
+                v22: this.avg2(a: l1, b: l0), v23: this.avg3(a: l1, b: l0, c: tl),
+                v30: this.avg2(a: l3, b: l2), v31: this.avg3(a: l3, b: l2, c: l1),
+                v32: this.avg2(a: l2, b: l1), v33: this.avg3(a: l2, b: l1, c: l0))
     } else {
         // HU: Horizontal-Up diagonal. Uses left pixels only.
         this.pred4x4_store!(workbuf: args.workbuf, off: y_off,
-            v00: this.avg2(a: l0, b: l1), v01: this.avg3(a: l0, b: l1, c: l2),
-            v02: this.avg2(a: l1, b: l2), v03: this.avg3(a: l1, b: l2, c: l3),
-            v10: this.avg2(a: l1, b: l2), v11: this.avg3(a: l1, b: l2, c: l3),
-            v12: this.avg2(a: l2, b: l3), v13: this.avg3(a: l2, b: l3, c: l3),
-            v20: this.avg2(a: l2, b: l3), v21: this.avg3(a: l2, b: l3, c: l3),
-            v22: (l3 & 0xFF), v23: (l3 & 0xFF),
-            v30: (l3 & 0xFF), v31: (l3 & 0xFF),
-            v32: (l3 & 0xFF), v33: (l3 & 0xFF))
+                v00: this.avg2(a: l0, b: l1), v01: this.avg3(a: l0, b: l1, c: l2),
+                v02: this.avg2(a: l1, b: l2), v03: this.avg3(a: l1, b: l2, c: l3),
+                v10: this.avg2(a: l1, b: l2), v11: this.avg3(a: l1, b: l2, c: l3),
+                v12: this.avg2(a: l2, b: l3), v13: this.avg3(a: l2, b: l3, c: l3),
+                v20: this.avg2(a: l2, b: l3), v21: this.avg3(a: l2, b: l3, c: l3),
+                v22: (l3 & 0xFF), v23: (l3 & 0xFF),
+                v30: (l3 & 0xFF), v31: (l3 & 0xFF),
+                v32: (l3 & 0xFF), v33: (l3 & 0xFF))
     }
 }
 
@@ -703,4 +703,3 @@ pri func decoder.clip8(v: base.u32) base.u32 {
     }
     return 255
 }
-

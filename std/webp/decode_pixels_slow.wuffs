@@ -21,12 +21,12 @@ pri func decoder.decode_pixels_slow?(dst: slice base.u8, src: base.io_reader, wi
     var y : base.u32
     var i : base.u32
 
-    var hg              : base.u32[..= 0x3FF]
-    var ht_base         : base.u32
-    var table_entry     : base.u32
+    var hg                 : base.u32[..= 0x3FF]
+    var ht_base            : base.u32
+    var table_entry        : base.u32
     var table_entry_n_bits : base.u32[..= 15]
-    var redir_top       : base.u32[..= 0xFFFF]
-    var redir_mask      : base.u32[..= 0x7FFF]
+    var redir_top          : base.u32[..= 0xFFFF]
+    var redir_mask         : base.u32[..= 0x7FFF]
 
     var pixel_g   : base.u32[..= 0xFFFF]
     var color     : base.u32  // u32 0xAARR_GGBB, non-premultiplied alpha.

@@ -288,14 +288,14 @@ pri func decoder.mode13(l: base.u8, t: base.u8, tl: base.u8) base.u8 {
 pri func decoder.apply_transform_cross_color!(pix: slice base.u8, tile_data: roslice base.u8),
         choosy,
 {
-    var tile_size_log2  : base.u32[..= 9]
-    var tiles_per_row   : base.u32[..= 16895]
-    var mask            : base.u32
+    var tile_size_log2    : base.u32[..= 9]
+    var tiles_per_row     : base.u32[..= 16895]
+    var mask              : base.u32
     var do_subtract_green : base.bool
-    var y              : base.u32[..= 0x4000]
-    var x              : base.u32[..= 0x4000]
-    var t              : base.u64
-    var tile_data      : roslice base.u8
+    var y                 : base.u32[..= 0x4000]
+    var x                 : base.u32[..= 0x4000]
+    var t                 : base.u64
+    var tile_data         : roslice base.u8
 
     var g2r : base.u32
     var g2b : base.u32

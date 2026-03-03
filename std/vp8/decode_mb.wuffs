@@ -239,10 +239,10 @@ pri func decoder.decode_one_mb!(workbuf: slice base.u8) {
     // Cached stride and base offset locals. These avoid re-reading struct
     // fields after choosy (indirect) IDCT/prediction calls, since the Wuffs
     // compiler must assume struct fields may have changed.
-    var ys           : base.u32[..= 0x4000]
-    var uvs          : base.u32[..= 0x2000]
-    var y_base       : base.u64
-    var uv_base      : base.u64
+    var ys      : base.u32[..= 0x4000]
+    var uvs     : base.u32[..= 0x2000]
+    var y_base  : base.u64
+    var uv_base : base.u64
 
     // mb_coeffs is guaranteed to be zero on entry: the struct is zero-initialized,
     // and idct_add/wht clear their coefficients after use.
@@ -294,7 +294,7 @@ pri func decoder.decode_one_mb!(workbuf: slice base.u8) {
     ys = this.y_stride
     uvs = this.uv_stride
     y_base = ((this.mb_y as base.u64) * 16 * (ys as base.u64)) +
-        ((this.mb_x as base.u64) * 16)
+            ((this.mb_x as base.u64) * 16)
 
     // Apply prediction and reconstruction. For skip blocks (all-zero coefficients),
     // IDCT adds nothing to the prediction, so we skip both WHT and IDCT.
@@ -386,8 +386,8 @@ pri func decoder.decode_one_mb!(workbuf: slice base.u8) {
     if not this.is_skip_coeff {
         // U blocks (indices 0-3 in mb_uv_nz).
         uv_base = (this.workbuf_offset_y_end ~mod+
-            ((this.mb_y as base.u64) * 8 * (uvs as base.u64))) ~mod+
-            ((this.mb_x as base.u64) * 8)
+                ((this.mb_y as base.u64) * 8 * (uvs as base.u64))) ~mod+
+                ((this.mb_x as base.u64) * 8)
         i = 0
         while i < 4 {
             block_offset = (16 + i) * 16
@@ -407,8 +407,8 @@ pri func decoder.decode_one_mb!(workbuf: slice base.u8) {
 
         // V blocks (indices 4-7 in mb_uv_nz).
         uv_base = (this.workbuf_offset_u_end ~mod+
-            ((this.mb_y as base.u64) * 8 * (uvs as base.u64))) ~mod+
-            ((this.mb_x as base.u64) * 8)
+                ((this.mb_y as base.u64) * 8 * (uvs as base.u64))) ~mod+
+                ((this.mb_x as base.u64) * 8)
         i = 0
         while i < 4 {
             block_offset = (20 + i) * 16
@@ -666,14 +666,14 @@ pri func decoder.clear_mb_nz_context!() {
 }
 
 pri func decoder.decode_mb_coefficients!() {
-    var block_idx    : base.u32
-    var ctx          : base.u32[..= 2]
-    var raw_ctx      : base.u32
-    var nz           : base.u32[..= 1]
-    var above_idx    : base.u32
-    var left_idx     : base.u32
-    var any_nz       : base.u32
-    var uv_idx       : base.u32
+    var block_idx : base.u32
+    var ctx       : base.u32[..= 2]
+    var raw_ctx   : base.u32
+    var nz        : base.u32[..= 1]
+    var above_idx : base.u32
+    var left_idx  : base.u32
+    var any_nz    : base.u32
+    var uv_idx    : base.u32
 
     if this.mb_luma_mode < 4 {
         // Y2 block (block 24) for 16x16 mode.
@@ -695,7 +695,7 @@ pri func decoder.decode_mb_coefficients!() {
             above_idx = (this.mb_x * 8) + (block_idx & 3)
             left_idx = block_idx >> 2
             raw_ctx = (this.above_nz[above_idx] as base.u32) ~mod+
-                (this.left_nz[left_idx] as base.u32)
+                    (this.left_nz[left_idx] as base.u32)
             if raw_ctx <= 2 {
                 ctx = raw_ctx as base.u32[..= 2]
             } else {
@@ -720,7 +720,7 @@ pri func decoder.decode_mb_coefficients!() {
             above_idx = (this.mb_x * 8) + (block_idx & 3)
             left_idx = block_idx >> 2
             raw_ctx = (this.above_nz[above_idx] as base.u32) ~mod+
-                (this.left_nz[left_idx] as base.u32)
+                    (this.left_nz[left_idx] as base.u32)
             if raw_ctx <= 2 {
                 ctx = raw_ctx as base.u32[..= 2]
             } else {
@@ -743,7 +743,7 @@ pri func decoder.decode_mb_coefficients!() {
         above_idx = (this.mb_x * 8) + 4 + ((uv_idx >> 2) * 2) + (uv_idx & 1)
         left_idx = 4 + ((uv_idx >> 2) * 2) + ((uv_idx >> 1) & 1)
         raw_ctx = (this.above_nz[above_idx] as base.u32) ~mod+
-            (this.left_nz[left_idx] as base.u32)
+                (this.left_nz[left_idx] as base.u32)
         if raw_ctx <= 2 {
             ctx = raw_ctx as base.u32[..= 2]
         } else {
@@ -895,10 +895,10 @@ pri func decoder.decode_block_coeffs!(block_offset: base.u32[..= 384], block_typ
     if lb < 16 {
         if ((lri ~mod+ 4) <= lwi) and (lri < 0xFFD) {
             lv = (lv ~mod<< 32) |
-                ((this.p1_buffer[lri + 0] as base.u64) ~mod<< 24) |
-                ((this.p1_buffer[lri + 1] as base.u64) ~mod<< 16) |
-                ((this.p1_buffer[lri + 2] as base.u64) ~mod<< 8) |
-                (this.p1_buffer[lri + 3] as base.u64)
+                    ((this.p1_buffer[lri + 0] as base.u64) ~mod<< 24) |
+                    ((this.p1_buffer[lri + 1] as base.u64) ~mod<< 16) |
+                    ((this.p1_buffer[lri + 2] as base.u64) ~mod<< 8) |
+                    (this.p1_buffer[lri + 3] as base.u64)
             lri += 4
             lb ~mod+= 32
         } else {
@@ -943,10 +943,10 @@ pri func decoder.decode_block_coeffs!(block_offset: base.u32[..= 384], block_typ
         if lb < 28 {
             if ((lri ~mod+ 4) <= lwi) and (lri < 0xFFD) {
                 lv = (lv ~mod<< 32) |
-                    ((this.p1_buffer[lri + 0] as base.u64) ~mod<< 24) |
-                    ((this.p1_buffer[lri + 1] as base.u64) ~mod<< 16) |
-                    ((this.p1_buffer[lri + 2] as base.u64) ~mod<< 8) |
-                    (this.p1_buffer[lri + 3] as base.u64)
+                        ((this.p1_buffer[lri + 0] as base.u64) ~mod<< 24) |
+                        ((this.p1_buffer[lri + 1] as base.u64) ~mod<< 16) |
+                        ((this.p1_buffer[lri + 2] as base.u64) ~mod<< 8) |
+                        (this.p1_buffer[lri + 3] as base.u64)
                 lri += 4
                 lb ~mod+= 32
             } else {
@@ -1014,9 +1014,9 @@ pri func decoder.decode_block_coeffs!(block_offset: base.u32[..= 384], block_typ
             if lb < 40 {
                 if ((lri ~mod+ 3) <= lwi) and (lri < 0xFFD) {
                     lv = (lv ~mod<< 24) |
-                        ((this.p1_buffer[lri + 0] as base.u64) ~mod<< 16) |
-                        ((this.p1_buffer[lri + 1] as base.u64) ~mod<< 8) |
-                        (this.p1_buffer[lri + 2] as base.u64)
+                            ((this.p1_buffer[lri + 0] as base.u64) ~mod<< 16) |
+                            ((this.p1_buffer[lri + 1] as base.u64) ~mod<< 8) |
+                            (this.p1_buffer[lri + 2] as base.u64)
                     lri += 3
                     lb ~mod+= 24
                 } else {

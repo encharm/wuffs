@@ -218,10 +218,10 @@ pri func decoder.p1_read_sign!() base.u32[..= 1] {
     if this.p1_bits < 16 {
         if ((this.p1_ri ~mod+ 4) <= this.p1_wi) and (this.p1_ri < 0xFFD) {
             this.p1_value = (this.p1_value ~mod<< 32) |
-                ((this.p1_buffer[this.p1_ri + 0] as base.u64) ~mod<< 24) |
-                ((this.p1_buffer[this.p1_ri + 1] as base.u64) ~mod<< 16) |
-                ((this.p1_buffer[this.p1_ri + 2] as base.u64) ~mod<< 8) |
-                (this.p1_buffer[this.p1_ri + 3] as base.u64)
+                    ((this.p1_buffer[this.p1_ri + 0] as base.u64) ~mod<< 24) |
+                    ((this.p1_buffer[this.p1_ri + 1] as base.u64) ~mod<< 16) |
+                    ((this.p1_buffer[this.p1_ri + 2] as base.u64) ~mod<< 8) |
+                    (this.p1_buffer[this.p1_ri + 3] as base.u64)
             this.p1_ri += 4
             this.p1_bits ~mod+= 32
         } else {

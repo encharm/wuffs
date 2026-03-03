@@ -35,19 +35,19 @@ pri func decoder.idct_add_arm_neon!(dst: slice base.u8, stride: base.u32, coeff_
     var r23 : base.arm_neon_u16x8
 
     // Butterfly temporaries.
-    var b1       : base.arm_neon_u16x8
-    var mul1     : base.arm_neon_u16x8
-    var c0       : base.arm_neon_u16x8
-    var c1       : base.arm_neon_u16x8
-    var a_val    : base.arm_neon_u16x4
-    var b_val    : base.arm_neon_u16x4
-    var c_val    : base.arm_neon_u16x4
-    var d_val    : base.arm_neon_u16x4
-    var d0       : base.arm_neon_u16x8
-    var d1       : base.arm_neon_u16x8
-    var e0       : base.arm_neon_u16x8
-    var e_tmp    : base.arm_neon_u16x8
-    var e1       : base.arm_neon_u16x8
+    var b1    : base.arm_neon_u16x8
+    var mul1  : base.arm_neon_u16x8
+    var c0    : base.arm_neon_u16x8
+    var c1    : base.arm_neon_u16x8
+    var a_val : base.arm_neon_u16x4
+    var b_val : base.arm_neon_u16x4
+    var c_val : base.arm_neon_u16x4
+    var d_val : base.arm_neon_u16x4
+    var d0    : base.arm_neon_u16x8
+    var d1    : base.arm_neon_u16x8
+    var e0    : base.arm_neon_u16x8
+    var e_tmp : base.arm_neon_u16x8
+    var e1    : base.arm_neon_u16x8
 
     // Transpose temporaries.
     var t0 : base.arm_neon_u16x8

@@ -243,7 +243,6 @@ pri func decoder.decode_huffman_tree_simple?(src: base.io_reader, hg: base.u32[.
 
 }
 
-
 pri func decoder.decode_code_length_code_lengths?(src: base.io_reader) {
     var c8      : base.u8
     var n_codes : base.u32[..= 19]

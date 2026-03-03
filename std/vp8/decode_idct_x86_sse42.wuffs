@@ -23,10 +23,10 @@ pri func decoder.idct_add_x86_sse42!(dst: slice base.u8, stride: base.u32, coeff
     var util : base.x86_sse42_utility
 
     // 16-bit constants.
-    var k1    : base.x86_m128i  // 20091 (k for K1 = cos factor)
-    var k2    : base.x86_m128i  // 35468 as u16 = -30068 as i16 (k for K2 = sin factor)
-    var k_4   : base.x86_m128i  // rounding bias
-    var k_0   : base.x86_m128i  // zeroes
+    var k1  : base.x86_m128i  // 20091 (k for K1 = cos factor)
+    var k2  : base.x86_m128i  // 35468 as u16 = -30068 as i16 (k for K2 = sin factor)
+    var k_4 : base.x86_m128i  // rounding bias
+    var k_0 : base.x86_m128i  // zeroes
 
     // Rows loaded from mb_coeffs (i32), then packed to i16.
     var row0 : base.x86_m128i
@@ -253,8 +253,8 @@ pri func decoder.idct_dc_add_x86_sse42!(dst: slice base.u8, stride: base.u32, co
     var sum    : base.x86_m128i
     var out    : base.x86_m128i
 
-    var off    : base.u32[..= 384]
-    var dc     : base.u32
+    var off : base.u32[..= 384]
+    var dc  : base.u32
 
     off = args.coeff_offset
     k_0 = util.make_m128i_zeroes()
