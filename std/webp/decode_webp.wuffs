@@ -20,7 +20,6 @@ pub status "#bad transform"
 pub status "#short chunk"
 pub status "#truncated input"
 pub status "#unsupported number of Huffman groups"
-pub status "#unsupported transform after color indexing transform"
 pub status "#unsupported WebP file"
 
 pri status "#internal error: inconsistent Huffman code"
@@ -360,10 +359,10 @@ pri func decoder.do_decode_image_config_limited_vp8l?(src: base.io_reader) {
     c32 >>= 14
     this.height = (c32 & 0x3FFF) + 1
     c32 >>= 14
-    this.pixfmt = base.PIXEL_FORMAT__BGRX
-    if (c32 & 1) <> 0 {
-        this.pixfmt = base.PIXEL_FORMAT__BGRA_NONPREMUL
-    }
+    // VP8L always stores full BGRA data. For images without alpha, all valid
+    // pixels have alpha=0xFF. Use BGRA_NONPREMUL (not BGRX) so that zeroed
+    // palette entries for out-of-range color indices preserve alpha=0.
+    this.pixfmt = base.PIXEL_FORMAT__BGRA_NONPREMUL
     c32 >>= 1
     if c32 <> 0 {
         return "#bad header"
@@ -837,6 +836,7 @@ pri func decoder.do_decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reade
     var c8             : base.u8
     var has_more       : base.u32[..= 1]
     var width          : base.u32[..= 0x4000]
+    var saved_width    : base.u32[..= 0x4000]
     var dst            : slice base.u8
     var tile_data      : roslice base.u8
     var status         : base.status
@@ -926,6 +926,23 @@ pri func decoder.do_decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reade
     choose apply_transform_subtract_green = [
             apply_transform_subtract_green_x86_avx2]
 
+    // When color indexing is present with packing (palette <= 16), transforms
+    // applied before color_indexing inverse operate on the packed-width data,
+    // which lives at workbuf[workbuf_offset_for_color_indexing..]. Temporarily
+    // set this.width to color_indexing_width and point pix at the packed region.
+    saved_width = this.width
+    if this.seen_transform[3] {
+        this.width = this.color_indexing_width
+        if ((this.workbuf_offset_for_color_indexing as base.u64) <=
+                (this.workbuf_offset_for_transform[0] as base.u64)) and
+                ((this.workbuf_offset_for_transform[0] as base.u64) <=
+                args.workbuf.length()) {
+            pix = args.workbuf[
+                    (this.workbuf_offset_for_color_indexing as base.u64) ..
+                    (this.workbuf_offset_for_transform[0] as base.u64)]
+        }
+    }
+
     which = this.n_transforms
     while which > 0 {
         which -= 1
@@ -955,10 +972,18 @@ pri func decoder.do_decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reade
         } else if transform_type == 2 {
             this.apply_transform_subtract_green!(pix: pix)
         } else {
+            // Restore full width and full pix buffer before color_indexing
+            // inverse (it reads packed data from workbuf_offset_for_color_indexing
+            // and writes expanded rows using this.width).
+            this.width = saved_width
+            if (this.workbuf_offset_for_transform[0] as base.u64) <= args.workbuf.length() {
+                pix = args.workbuf[.. (this.workbuf_offset_for_transform[0] as base.u64)]
+            }
             this.apply_transform_color_indexing!(pix: pix)
             width = this.width
         }
     }
+    this.width = saved_width
 
     status = this.swizzle!(
             dst: args.dst,
@@ -972,11 +997,12 @@ pri func decoder.do_decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reade
 }
 
 pri func decoder.decode_transform?(src: base.io_reader, workbuf: slice base.u8) {
-    var status         : base.status
-    var c8             : base.u8
-    var transform_type : base.u32[..= 3]
-    var tile_size_log2 : base.u32[..= 9]
-    var p              : slice base.u8
+    var status          : base.status
+    var c8              : base.u8
+    var transform_type  : base.u32[..= 3]
+    var tile_size_log2  : base.u32[..= 9]
+    var effective_width : base.u32[..= 0x4000]
+    var p               : slice base.u8
 
     if this.n_bits < 2 {
         c8 = args.src.read_u8?()
@@ -993,8 +1019,6 @@ pri func decoder.decode_transform?(src: base.io_reader, workbuf: slice base.u8) 
 
     if this.seen_transform[transform_type] or (this.n_transforms >= 4) {
         return "#bad transform"
-    } else if this.seen_transform[3] {
-        return "#unsupported transform after color indexing transform"
     }
     this.seen_transform[transform_type] = true
     this.transform_type[this.n_transforms] = transform_type as base.u8
@@ -1015,6 +1039,12 @@ pri func decoder.decode_transform?(src: base.io_reader, workbuf: slice base.u8) 
         this.bits >>= 3
         this.n_bits -= 3
 
+        // When color indexing was parsed earlier, use the packed width.
+        effective_width = this.width
+        if this.seen_transform[3] {
+            effective_width = this.color_indexing_width
+        }
+
         this.decode_color_cache_parameters?(src: args.src)
         this.decode_huffman_groups?(src: args.src, n_huffman_groups: 1, n_bitstream_groups: 1)
 
@@ -1031,7 +1061,7 @@ pri func decoder.decode_transform?(src: base.io_reader, workbuf: slice base.u8) 
                     (this.workbuf_offset_for_transform[transform_type + 1] as base.u64) ..
                     (this.workbuf_offset_for_transform[transform_type + 2] as base.u64)],
                     src: args.src,
-                    width: (this.width + (((1 as base.u32) << tile_size_log2) - 1)) >> tile_size_log2,
+                    width: (effective_width + (((1 as base.u32) << tile_size_log2) - 1)) >> tile_size_log2,
                     height: (this.height + (((1 as base.u32) << tile_size_log2) - 1)) >> tile_size_log2,
                     tile_data: this.util.empty_slice_u8(),
                     tile_size_log2: 0)

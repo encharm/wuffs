@@ -80,6 +80,11 @@ pub struct decoder? implements base.image_decoder(
         lf_delta_enabled : base.bool,
         lf_ref_delta     : array[4] base.i32[..= 63],
         lf_mode_delta    : array[4] base.i32[..= 63],
+        // Number of Y rows to defer at each MB row boundary for filter overlap.
+        // The V-MB filter for row N modifies pixels in row N-1, so we hold
+        // back these rows and output them with the next MB row's swizzle.
+        // 0 = no filter, 2 = simple filter, 6 = normal filter.
+        filter_extra_rows : base.u32[..= 8],
 
         // ---- Quantization ----
         quant_y_ac_qi     : base.u8[..= 127],
@@ -457,6 +462,20 @@ pri func decoder.do_decode_frame?(dst: ptr base.pixel_buffer, src: base.io_reade
     // Precompute filter strengths per (segment, mode) to avoid per-MB work.
     this.precompute_filter_strengths!()
 
+    // The V-MB filter for row N modifies pixels in row N-1 (up to 3 rows in
+    // both Y and UV planes). We must hold back those rows from output until
+    // row N's filter has been applied. The number of extra luma rows:
+    //   Simple filter (Y only): filter2 modifies 1 Y row, round up to 2 (even)
+    //   Normal filter (Y+UV): filter246 modifies 3 UV rows = 6 luma rows
+    //   No filter: 0
+    if this.filter_level == 0 {
+        this.filter_extra_rows = 0
+    } else if this.filter_type == 1 {
+        this.filter_extra_rows = 2
+    } else {
+        this.filter_extra_rows = 6
+    }
+
     // Prepare swizzler for per-row output during decode.
     status = this.swizzler.prepare!(
             dst_pixfmt: args.dst.pixel_format(),
@@ -501,9 +520,11 @@ pri func decoder.init_coeff_probs!() {
 
 // swizzle_mb_row! converts one MB row of YCbCr data to the output pixel format.
 // The swizzler must have been prepared before calling this function.
-// Source sub-slices start at the current MB row offset so that swizzle_ycck's
-// (y - y_min_incl) indexing reads the correct data.
-pri func decoder.swizzle_mb_row!(dst: ptr base.pixel_buffer, workbuf: slice base.u8, mby: base.u32[..= 0x3FF]) base.status {
+//
+// The V-MB filter for row N modifies pixels in row N-1, so we hold back
+// filter_extra_rows from the bottom of each non-last MB row and include them
+// in the next row's output. This matches libwebp's FinishRow behavior.
+pri func decoder.swizzle_mb_row!(dst: ptr base.pixel_buffer, workbuf: slice base.u8, mby: base.u32[..= 0x3FF], is_last: base.bool) base.status {
     var status   : base.status
     var src0     : slice base.u8
     var src1     : slice base.u8
@@ -533,9 +554,26 @@ pri func decoder.swizzle_mb_row!(dst: ptr base.pixel_buffer, workbuf: slice base
     y_width = this.mb_width * 16
     uv_width = this.mb_width * 8
 
-    // Source sub-slices starting at the current MB row offset.
-    y_off = (args.mby as base.u64) * 16 * (this.y_stride as base.u64)
-    uv_off = (args.mby as base.u64) * 8 * (this.uv_stride as base.u64)
+    // Compute output row range, accounting for filter overlap.
+    y_min = args.mby * 16
+    if args.mby > 0 {
+        // Include deferred rows from the previous MB row.
+        y_min ~sat-= this.filter_extra_rows
+    }
+    y_max = ((args.mby as base.u32) + 1) * 16
+    if not args.is_last {
+        // Defer bottom rows until next MB row's V-MB filter is applied.
+        y_max ~sat-= this.filter_extra_rows
+    }
+    y_max = y_max.min(no_more_than: this.height)
+
+    if y_min >= y_max {
+        return ok
+    }
+
+    // Source sub-slices starting at the adjusted y_min offset.
+    y_off = (y_min as base.u64) * (this.y_stride as base.u64)
+    uv_off = ((y_min / 2) as base.u64) * (this.uv_stride as base.u64)
 
     assert this.workbuf_offset_u_end <= args.workbuf.length() via "a <= b: a <= c; c <= b"(
             c: this.workbuf_offset_v_end)
@@ -557,13 +595,9 @@ pri func decoder.swizzle_mb_row!(dst: ptr base.pixel_buffer, workbuf: slice base
 
     src3 = this.util.empty_slice_u8()
 
-    y_min = args.mby * 16
-    y_max = y_min + 16
-    y_max = y_max.min(no_more_than: this.height)
-
-    // Remaining heights from this row to end of planes.
-    rem_y_h = (this.mb_height ~sat- args.mby) * 16
-    rem_uv_h = (this.mb_height ~sat- args.mby) * 8
+    // Remaining heights from y_min to end of planes.
+    rem_y_h = (this.mb_height * 16) ~sat- y_min
+    rem_uv_h = (this.mb_height * 8) ~sat- (y_min / 2)
 
     status = this.swizzler.swizzle_ycck!(
             dst: args.dst,
@@ -598,6 +632,7 @@ pri func decoder.swizzle_mb_row!(dst: ptr base.pixel_buffer, workbuf: slice base
             v3: 0,
             is_rgb_or_cmyk: false,
             triangle_filter_for_2to1: false,
+            src_is_bt601: true,
             scratch_buffer_2k: this.scratch_buffer_2k[..])
     return status
 }

@@ -102,143 +102,25 @@ wuffs_webp_decode_interface(const char* filename,
       0, SIZE_MAX, width, height, want_hash);
 }
 
-// --------  Lossless (VP8L) tests
-
 const char*  //
-test_wuffs_webp_decode_interface_lossless_bricks_color() {
+test_wuffs_webp_decode_interface_lossless() {
   CHECK_FOCUS(__func__);
   return wuffs_webp_decode_interface(
       "test/data/bricks-color.lossless.webp", 160, 120, 0xFF022460);
 }
 
 const char*  //
-test_wuffs_webp_decode_interface_lossless_bricks_dither() {
+test_wuffs_webp_decode_interface_lossy() {
   CHECK_FOCUS(__func__);
   return wuffs_webp_decode_interface(
-      "test/data/bricks-dither.lossless.webp", 160, 120, 0xFF012463);
+      "test/data/bricks-color.lossy.webp", 160, 120, 0xFF032665);
 }
 
 const char*  //
-test_wuffs_webp_decode_interface_lossless_bricks_gray() {
+test_wuffs_webp_decode_interface_lossy_with_alpha() {
   CHECK_FOCUS(__func__);
   return wuffs_webp_decode_interface(
-      "test/data/bricks-gray.lossless.webp", 160, 120, 0xFF060606);
-}
-
-const char*  //
-test_wuffs_webp_decode_interface_lossless_bricks_nodither() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/bricks-nodither.lossless.webp", 160, 120, 0xFF012463);
-}
-
-const char*  //
-test_wuffs_webp_decode_interface_lossless_harvesters() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/harvesters.lossless.webp", 1165, 859, 0xFF0D010B);
-}
-
-const char*  //
-test_wuffs_webp_decode_interface_lossless_hat() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/hat.lossless.webp", 90, 112, 0xFF000000);
-}
-
-const char*  //
-test_wuffs_webp_decode_interface_lossless_hibiscus_primitive() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/hibiscus.primitive.lossless.webp", 312, 442, 0xFF7A754D);
-}
-
-const char*  //
-test_wuffs_webp_decode_interface_lossless_hibiscus_regular() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/hibiscus.regular.lossless.webp", 312, 442, 0xFF000000);
-}
-
-const char*  //
-test_wuffs_webp_decode_interface_lossless_hippopotamus() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/hippopotamus.lossless.webp", 36, 28, 0xFFF5F5F5);
-}
-
-const char*  //
-test_wuffs_webp_decode_interface_lossless_pjw_thumbnail() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/pjw-thumbnail.lossless.webp", 32, 32, 0xFFFFFFFF);
-}
-
-// --------  Lossy (VP8) tests
-
-const char*  //
-test_wuffs_webp_decode_interface_lossy_bricks_color() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/bricks-color.lossy.webp", 160, 120, 0xFF123168);
-}
-
-const char*  //
-test_wuffs_webp_decode_interface_lossy_bricks_gray() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/bricks-gray.lossy.webp", 160, 120, 0xFF161616);
-}
-
-const char*  //
-test_wuffs_webp_decode_interface_lossy_harvesters() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/harvesters.lossy.webp", 1165, 859, 0xFF121117);
-}
-
-const char*  //
-test_wuffs_webp_decode_interface_lossy_hat() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/hat.lossy.webp", 90, 112, 0xFF150F03);
-}
-
-const char*  //
-test_wuffs_webp_decode_interface_lossy_hibiscus_primitive() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/hibiscus.primitive.lossy.webp", 312, 442, 0xFF787457);
-}
-
-const char*  //
-test_wuffs_webp_decode_interface_lossy_hibiscus_regular() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/hibiscus.regular.lossy.webp", 312, 442, 0xFF101010);
-}
-
-const char*  //
-test_wuffs_webp_decode_interface_lossy_hippopotamus() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/hippopotamus.lossy.webp", 36, 28, 0xFFE1E1E3);
-}
-
-const char*  //
-test_wuffs_webp_decode_interface_lossy_pjw_thumbnail() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/pjw-thumbnail.lossy.webp", 32, 32, 0xFFEBEBEB);
-}
-
-// --------  Lossy with alpha (VP8X) tests
-
-const char*  //
-test_wuffs_webp_decode_interface_lossy_with_alpha_bricks_color() {
-  CHECK_FOCUS(__func__);
-  return wuffs_webp_decode_interface(
-      "test/data/bricks-color.lossy-with-alpha.webp", 16, 16, 0x64487DED);
+      "test/data/bricks-color.lossy-with-alpha.webp", 16, 16, 0x64427FFF);
 }
 
 // ---------------- Mimic Tests
@@ -504,30 +386,9 @@ bench_mimic_webp_lossy_decode_image_4002k_24bpp() {
 
 proc g_tests[] = {
 
-    // Lossless (VP8L)
-    test_wuffs_webp_decode_interface_lossless_bricks_color,
-    test_wuffs_webp_decode_interface_lossless_bricks_dither,
-    test_wuffs_webp_decode_interface_lossless_bricks_gray,
-    test_wuffs_webp_decode_interface_lossless_bricks_nodither,
-    test_wuffs_webp_decode_interface_lossless_harvesters,
-    test_wuffs_webp_decode_interface_lossless_hat,
-    test_wuffs_webp_decode_interface_lossless_hibiscus_primitive,
-    test_wuffs_webp_decode_interface_lossless_hibiscus_regular,
-    test_wuffs_webp_decode_interface_lossless_hippopotamus,
-    test_wuffs_webp_decode_interface_lossless_pjw_thumbnail,
-
-    // Lossy (VP8)
-    test_wuffs_webp_decode_interface_lossy_bricks_color,
-    test_wuffs_webp_decode_interface_lossy_bricks_gray,
-    test_wuffs_webp_decode_interface_lossy_harvesters,
-    test_wuffs_webp_decode_interface_lossy_hat,
-    test_wuffs_webp_decode_interface_lossy_hibiscus_primitive,
-    test_wuffs_webp_decode_interface_lossy_hibiscus_regular,
-    test_wuffs_webp_decode_interface_lossy_hippopotamus,
-    test_wuffs_webp_decode_interface_lossy_pjw_thumbnail,
-
-    // Lossy with alpha (VP8X)
-    test_wuffs_webp_decode_interface_lossy_with_alpha_bricks_color,
+    test_wuffs_webp_decode_interface_lossless,
+    test_wuffs_webp_decode_interface_lossy,
+    test_wuffs_webp_decode_interface_lossy_with_alpha,
 
 #ifdef WUFFS_MIMIC
 
@@ -537,15 +398,10 @@ proc g_tests[] = {
     test_mimic_webp_lossless_decode_image_552k_32bpp,
     test_mimic_webp_lossless_decode_image_4002k_24bpp,
 
-    // TODO: lossy mimic tests are disabled because Wuffs uses box filter
-    // chroma upsampling while libwebp uses bilinear, and there are minor IDCT
-    // and loop filter rounding differences. Byte-for-byte comparison is too
-    // strict for lossy codecs.
-    //
-    // test_mimic_webp_lossy_decode_image_2k_24bpp,
-    // test_mimic_webp_lossy_decode_image_3k_24bpp,
-    // test_mimic_webp_lossy_decode_image_6k_24bpp,
-    // test_mimic_webp_lossy_decode_image_174k_24bpp,
+    test_mimic_webp_lossy_decode_image_2k_24bpp,
+    test_mimic_webp_lossy_decode_image_3k_24bpp,
+    test_mimic_webp_lossy_decode_image_6k_24bpp,
+    test_mimic_webp_lossy_decode_image_174k_24bpp,
 
 #endif  // WUFFS_MIMIC
 

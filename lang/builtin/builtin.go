@@ -738,6 +738,7 @@ var funcsOther = [...]string{
 		"v3: u8[..= 4]," +
 		"is_rgb_or_cmyk: bool," +
 		"triangle_filter_for_2to1: bool," +
+		"src_is_bt601: bool," +
 		"scratch_buffer_2k: slice u8) status",
 
 	// ---- arm_crc32_utility

@@ -4794,6 +4794,63 @@ wuffs_base__color_ycc__as__color_u32_abgr(uint8_t yy, uint8_t cb, uint8_t cr) {
          ((0x00FF0000 & rr32) >> 16);
 }
 
+// wuffs_base__color_ycc_bt601__as__color_u32 converts from BT.601 studio-range
+// YCbCr (as used by VP8, H.264, etc.) to 0xAARRGGBB. The alpha bits are
+// always 0xFF.
+//
+// This uses the studio-range formula from ITU-R BT.601 / RFC 6386 section 13:
+//  R = 1.164*(Y-16) + 1.596*(Cr-128)
+//  G = 1.164*(Y-16) - 0.391*(Cb-128) - 0.813*(Cr-128)
+//  B = 1.164*(Y-16) + 2.018*(Cb-128)
+//
+// The fixed-point arithmetic matches libwebp's VP8YUVToR/G/B for bit-exact
+// results.
+static inline wuffs_base__color_u32_argb_premul  //
+wuffs_base__color_ycc_bt601__as__color_u32(uint8_t yy,
+                                           uint8_t cb,
+                                           uint8_t cr) {
+  int32_t yc = ((int32_t)yy * 19077) >> 8;
+  int32_t rc = ((int32_t)cr * 26149) >> 8;
+  int32_t gc_u = ((int32_t)cb * 6419) >> 8;
+  int32_t gc_v = ((int32_t)cr * 13320) >> 8;
+  int32_t bc = ((int32_t)cb * 33050) >> 8;
+
+  int32_t rr = yc + rc - 14234;
+  int32_t gg = yc - gc_u - gc_v + 8708;
+  int32_t bb = yc + bc - 17685;
+
+  // Clip to [0, 255]: if in range [0, 16320], shift right by 6.
+  uint32_t r = (rr < 0) ? 0u : (rr > 16320) ? 255u : ((uint32_t)rr >> 6);
+  uint32_t g = (gg < 0) ? 0u : (gg > 16320) ? 255u : ((uint32_t)gg >> 6);
+  uint32_t b = (bb < 0) ? 0u : (bb > 16320) ? 255u : ((uint32_t)bb >> 6);
+
+  return 0xFF000000u | (r << 16) | (g << 8) | b;
+}
+
+// wuffs_base__color_ycc_bt601__as__color_u32_abgr is like
+// wuffs_base__color_ycc_bt601__as__color_u32 but the uint32_t returned is in
+// 0xAABBGGRR order, not 0xAARRGGBB.
+static inline uint32_t  //
+wuffs_base__color_ycc_bt601__as__color_u32_abgr(uint8_t yy,
+                                                uint8_t cb,
+                                                uint8_t cr) {
+  int32_t yc = ((int32_t)yy * 19077) >> 8;
+  int32_t rc = ((int32_t)cr * 26149) >> 8;
+  int32_t gc_u = ((int32_t)cb * 6419) >> 8;
+  int32_t gc_v = ((int32_t)cr * 13320) >> 8;
+  int32_t bc = ((int32_t)cb * 33050) >> 8;
+
+  int32_t rr = yc + rc - 14234;
+  int32_t gg = yc - gc_u - gc_v + 8708;
+  int32_t bb = yc + bc - 17685;
+
+  uint32_t r = (rr < 0) ? 0u : (rr > 16320) ? 255u : ((uint32_t)rr >> 6);
+  uint32_t g = (gg < 0) ? 0u : (gg > 16320) ? 255u : ((uint32_t)gg >> 6);
+  uint32_t b = (bb < 0) ? 0u : (bb > 16320) ? 255u : ((uint32_t)bb >> 6);
+
+  return 0xFF000000u | (b << 16) | (g << 8) | r;
+}
+
 // --------
 
 typedef uint8_t wuffs_base__pixel_blend;
@@ -15584,6 +15641,7 @@ struct wuffs_vp8__decoder__struct {
     bool f_lf_delta_enabled;
     int32_t f_lf_ref_delta[4];
     int32_t f_lf_mode_delta[4];
+    uint32_t f_filter_extra_rows;
     uint8_t f_quant_y_ac_qi;
     int32_t f_quant_y_dc_delta;
     int32_t f_quant_y2_dc_delta;
@@ -16315,7 +16373,6 @@ extern const char wuffs_webp__error__bad_transform[];
 extern const char wuffs_webp__error__short_chunk[];
 extern const char wuffs_webp__error__truncated_input[];
 extern const char wuffs_webp__error__unsupported_number_of_huffman_groups[];
-extern const char wuffs_webp__error__unsupported_transform_after_color_indexing_transform[];
 extern const char wuffs_webp__error__unsupported_webp_file[];
 
 // ---------------- Public Consts
@@ -16639,6 +16696,7 @@ struct wuffs_webp__decoder__struct {
     struct {
       uint32_t v_transform_type;
       uint32_t v_tile_size_log2;
+      uint32_t v_effective_width;
     } s_decode_transform;
     struct {
       uint32_t v_tile_size_log2;
@@ -19308,6 +19366,7 @@ wuffs_base__pixel_swizzler__swizzle_ycck(
     uint8_t v3,
     bool is_rgb_or_cmyk,
     bool triangle_filter_for_2to1,
+    bool src_is_bt601,
     wuffs_base__slice_u8 scratch_buffer_2k);
 
 // ---------------- Images (Utility)
@@ -32721,6 +32780,69 @@ wuffs_private_impl__swizzle_ycc__convert_3_rgbx(wuffs_base__pixel_buffer* dst,
   }
 }
 
+// BT.601 studio-range variants for VP8/H.264.
+
+static void  //
+wuffs_private_impl__swizzle_ycc_bt601__convert_3_general(
+    wuffs_base__pixel_buffer* dst,
+    uint32_t x,
+    uint32_t x_end,
+    uint32_t y,
+    const uint8_t* up0,
+    const uint8_t* up1,
+    const uint8_t* up2) {
+  for (; x < x_end; x++) {
+    uint32_t color =                                  //
+        wuffs_base__color_ycc_bt601__as__color_u32(  //
+            *up0++, *up1++, *up2++);
+    wuffs_base__pixel_buffer__set_color_u32_at(dst, x, y, color);
+  }
+}
+
+static void  //
+wuffs_private_impl__swizzle_ycc_bt601__convert_3_bgrx(
+    wuffs_base__pixel_buffer* dst,
+    uint32_t x,
+    uint32_t x_end,
+    uint32_t y,
+    const uint8_t* up0,
+    const uint8_t* up1,
+    const uint8_t* up2) {
+  size_t dst_stride = dst->private_impl.planes[0].stride;
+  uint8_t* dst_iter = dst->private_impl.planes[0].ptr +
+                      (dst_stride * ((size_t)y)) + (4u * ((size_t)x));
+
+  for (; x < x_end; x++) {
+    uint32_t color =                                 //
+        wuffs_base__color_ycc_bt601__as__color_u32(  //
+            *up0++, *up1++, *up2++);
+    wuffs_base__poke_u32le__no_bounds_check(dst_iter, color);
+    dst_iter += 4u;
+  }
+}
+
+static void  //
+wuffs_private_impl__swizzle_ycc_bt601__convert_3_rgbx(
+    wuffs_base__pixel_buffer* dst,
+    uint32_t x,
+    uint32_t x_end,
+    uint32_t y,
+    const uint8_t* up0,
+    const uint8_t* up1,
+    const uint8_t* up2) {
+  size_t dst_stride = dst->private_impl.planes[0].stride;
+  uint8_t* dst_iter = dst->private_impl.planes[0].ptr +
+                      (dst_stride * ((size_t)y)) + (4u * ((size_t)x));
+
+  for (; x < x_end; x++) {
+    uint32_t color =                                      //
+        wuffs_base__color_ycc_bt601__as__color_u32_abgr(  //
+            *up0++, *up1++, *up2++);
+    wuffs_base__poke_u32le__no_bounds_check(dst_iter, color);
+    dst_iter += 4u;
+  }
+}
+
 // --------
 
 // wuffs_private_impl__swizzle_ycc__upsample_func upsamples to a destination
@@ -33720,6 +33842,7 @@ wuffs_base__pixel_swizzler__swizzle_ycck(
     uint8_t v3,
     bool is_rgb_or_cmyk,
     bool triangle_filter_for_2to1,
+    bool src_is_bt601,
     wuffs_base__slice_u8 scratch_buffer_2k) {
   if (!p) {
     return wuffs_base__make_status(wuffs_base__error__bad_receiver);
@@ -33932,6 +34055,23 @@ wuffs_base__pixel_swizzler__swizzle_ycck(
 
   if (is_rgb_or_cmyk) {
     conv3func = &wuffs_private_impl__swizzle_rgb__convert_3_general;
+  } else if (src_is_bt601) {
+    // BT.601 studio-range YCbCr (VP8, H.264).
+    switch (dst->pixcfg.private_impl.pixfmt.repr) {
+      case WUFFS_BASE__PIXEL_FORMAT__BGRA_NONPREMUL:
+      case WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL:
+      case WUFFS_BASE__PIXEL_FORMAT__BGRX:
+        conv3func = &wuffs_private_impl__swizzle_ycc_bt601__convert_3_bgrx;
+        break;
+      case WUFFS_BASE__PIXEL_FORMAT__RGBA_NONPREMUL:
+      case WUFFS_BASE__PIXEL_FORMAT__RGBA_PREMUL:
+      case WUFFS_BASE__PIXEL_FORMAT__RGBX:
+        conv3func = &wuffs_private_impl__swizzle_ycc_bt601__convert_3_rgbx;
+        break;
+      default:
+        conv3func = &wuffs_private_impl__swizzle_ycc_bt601__convert_3_general;
+        break;
+    }
   } else {
     switch (dst->pixcfg.private_impl.pixfmt.repr) {
       case WUFFS_BASE__PIXEL_FORMAT__BGRA_NONPREMUL:
@@ -57641,6 +57781,7 @@ wuffs_jpeg__decoder__swizzle_colorful(
       self->private_impl.f_components_v[3u],
       self->private_impl.f_is_rgb_or_cmyk,
       ! self->private_impl.f_use_lower_quality,
+      false,
       wuffs_base__make_slice_u8(self->private_data.f_swizzle_ycck_scratch_buffer_2k, 2048));
   return wuffs_private_impl__status__ensure_not_a_suspension(v_status);
 }
@@ -82619,7 +82760,8 @@ wuffs_vp8__decoder__swizzle_mb_row(
     wuffs_vp8__decoder* self,
     wuffs_base__pixel_buffer* a_dst,
     wuffs_base__slice_u8 a_workbuf,
-    uint32_t a_mby);
+    uint32_t a_mby,
+    bool a_is_last);
 
 // ---------------- VTables
 
@@ -90831,7 +90973,11 @@ wuffs_vp8__decoder__precompute_filter_strengths(
           }
         }
         if (v_level > 63u) {
-          v_level = 0u;
+          if ((v_level & 2147483648u) != 0u) {
+            v_level = 0u;
+          } else {
+            v_level = 63u;
+          }
         }
       }
       if ((v_level > 0u) && (v_level <= 63u)) {
@@ -92132,7 +92278,7 @@ wuffs_vp8__decoder__decode_frame_mb(
       if (((uint32_t)(self->private_impl.f_bool_ri + 256u)) >= self->private_impl.f_bool_wi) {
         wuffs_vp8__decoder__bool_fill_from_workbuf(self, a_workbuf);
       }
-      if (((uint32_t)(self->private_impl.f_p1_ri + 256u)) >= self->private_impl.f_p1_wi) {
+      if (((uint32_t)(self->private_impl.f_p1_ri + 2048u)) >= self->private_impl.f_p1_wi) {
         if (self->private_impl.f_multi_partition) {
           wuffs_vp8__decoder__p1_fill_from_workbuf(self, a_workbuf);
         } else {
@@ -92152,12 +92298,16 @@ wuffs_vp8__decoder__decode_frame_mb(
     }
     if (self->private_impl.f_mb_y > 0u) {
       v_prev_mby = (self->private_impl.f_mb_y - 1u);
-      if (self->private_impl.f_filter_type == 1u) {
+      if ((self->private_impl.f_filter_type == 1u) && (self->private_impl.f_filter_level > 0u)) {
         wuffs_vp8__decoder__apply_simple_filter_row(self, a_workbuf, v_prev_mby);
       } else if (self->private_impl.f_filter_level > 0u) {
         wuffs_vp8__decoder__apply_normal_filter_row(self, a_workbuf, v_prev_mby);
       }
-      v_swizzle_status = wuffs_vp8__decoder__swizzle_mb_row(self, a_dst, a_workbuf, v_prev_mby);
+      v_swizzle_status = wuffs_vp8__decoder__swizzle_mb_row(self,
+          a_dst,
+          a_workbuf,
+          v_prev_mby,
+          false);
     }
     if (self->private_impl.f_mb_y < 1023u) {
       self->private_impl.f_mb_y += 1u;
@@ -92166,12 +92316,16 @@ wuffs_vp8__decoder__decode_frame_mb(
   if (self->private_impl.f_mb_height > 0u) {
     v_prev_mby = (self->private_impl.f_mb_height - 1u);
     if (v_prev_mby <= 1023u) {
-      if (self->private_impl.f_filter_type == 1u) {
+      if ((self->private_impl.f_filter_type == 1u) && (self->private_impl.f_filter_level > 0u)) {
         wuffs_vp8__decoder__apply_simple_filter_row(self, a_workbuf, v_prev_mby);
       } else if (self->private_impl.f_filter_level > 0u) {
         wuffs_vp8__decoder__apply_normal_filter_row(self, a_workbuf, v_prev_mby);
       }
-      v_swizzle_status = wuffs_vp8__decoder__swizzle_mb_row(self, a_dst, a_workbuf, v_prev_mby);
+      v_swizzle_status = wuffs_vp8__decoder__swizzle_mb_row(self,
+          a_dst,
+          a_workbuf,
+          v_prev_mby,
+          true);
     }
   }
   status = v_swizzle_status;
@@ -92587,8 +92741,10 @@ wuffs_vp8__decoder__clear_mb_nz_context(
     self->private_data.f_left_nz[(6u + v_i)] = 0u;
     v_i += 1u;
   }
-  self->private_data.f_above_nz_y2[self->private_impl.f_mb_x] = 0u;
-  self->private_impl.f_left_nz_y2 = 0u;
+  if (self->private_impl.f_mb_luma_mode < 4u) {
+    self->private_data.f_above_nz_y2[self->private_impl.f_mb_x] = 0u;
+    self->private_impl.f_left_nz_y2 = 0u;
+  }
   return wuffs_base__make_empty_struct();
 }
 
@@ -95111,6 +95267,13 @@ wuffs_vp8__decoder__do_decode_frame(
     }
     wuffs_vp8__decoder__decode_partition0(self, a_workbuf);
     wuffs_vp8__decoder__precompute_filter_strengths(self);
+    if (self->private_impl.f_filter_level == 0u) {
+      self->private_impl.f_filter_extra_rows = 0u;
+    } else if (self->private_impl.f_filter_type == 1u) {
+      self->private_impl.f_filter_extra_rows = 2u;
+    } else {
+      self->private_impl.f_filter_extra_rows = 6u;
+    }
     v_status = wuffs_base__pixel_swizzler__prepare(&self->private_impl.f_swizzler,
         wuffs_base__pixel_buffer__pixel_format(a_dst),
         wuffs_base__pixel_buffer__palette(a_dst),
@@ -95204,7 +95367,8 @@ wuffs_vp8__decoder__swizzle_mb_row(
     wuffs_vp8__decoder* self,
     wuffs_base__pixel_buffer* a_dst,
     wuffs_base__slice_u8 a_workbuf,
-    uint32_t a_mby) {
+    uint32_t a_mby,
+    bool a_is_last) {
   wuffs_base__status v_status = wuffs_base__make_status(NULL);
   wuffs_base__slice_u8 v_src0 = {0};
   wuffs_base__slice_u8 v_src1 = {0};
@@ -95232,8 +95396,20 @@ wuffs_vp8__decoder__swizzle_mb_row(
   }
   v_y_width = (self->private_impl.f_mb_width * 16u);
   v_uv_width = (self->private_impl.f_mb_width * 8u);
-  v_y_off = (((uint64_t)(a_mby)) * 16u * ((uint64_t)(self->private_impl.f_y_stride)));
-  v_uv_off = (((uint64_t)(a_mby)) * 8u * ((uint64_t)(self->private_impl.f_uv_stride)));
+  v_y_min = (a_mby * 16u);
+  if (a_mby > 0u) {
+    wuffs_private_impl__u32__sat_sub_indirect(&v_y_min, self->private_impl.f_filter_extra_rows);
+  }
+  v_y_max = ((((uint32_t)(a_mby)) + 1u) * 16u);
+  if ( ! a_is_last) {
+    wuffs_private_impl__u32__sat_sub_indirect(&v_y_max, self->private_impl.f_filter_extra_rows);
+  }
+  v_y_max = wuffs_base__u32__min(v_y_max, self->private_impl.f_height);
+  if (v_y_min >= v_y_max) {
+    return wuffs_base__make_status(NULL);
+  }
+  v_y_off = (((uint64_t)(v_y_min)) * ((uint64_t)(self->private_impl.f_y_stride)));
+  v_uv_off = (((uint64_t)((v_y_min / 2u))) * ((uint64_t)(self->private_impl.f_uv_stride)));
   if (v_y_off <= self->private_impl.f_workbuf_offset_y_end) {
     v_src0 = wuffs_base__slice_u8__subslice_ij(a_workbuf, v_y_off, self->private_impl.f_workbuf_offset_y_end);
   }
@@ -95246,11 +95422,8 @@ wuffs_vp8__decoder__swizzle_mb_row(
     v_src2 = wuffs_base__slice_u8__subslice_ij(a_workbuf, v_v_start, self->private_impl.f_workbuf_offset_v_end);
   }
   v_src3 = wuffs_base__utility__empty_slice_u8();
-  v_y_min = (a_mby * 16u);
-  v_y_max = (v_y_min + 16u);
-  v_y_max = wuffs_base__u32__min(v_y_max, self->private_impl.f_height);
-  v_rem_y_h = (wuffs_base__u32__sat_sub(self->private_impl.f_mb_height, a_mby) * 16u);
-  v_rem_uv_h = (wuffs_base__u32__sat_sub(self->private_impl.f_mb_height, a_mby) * 8u);
+  v_rem_y_h = wuffs_base__u32__sat_sub((self->private_impl.f_mb_height * 16u), v_y_min);
+  v_rem_uv_h = wuffs_base__u32__sat_sub((self->private_impl.f_mb_height * 8u), (v_y_min / 2u));
   v_status = wuffs_base__pixel_swizzler__swizzle_ycck(&self->private_impl.f_swizzler,
       a_dst,
       wuffs_base__pixel_buffer__palette(a_dst),
@@ -95284,6 +95457,7 @@ wuffs_vp8__decoder__swizzle_mb_row(
       0u,
       false,
       false,
+      true,
       wuffs_base__make_slice_u8(self->private_data.f_scratch_buffer_2k, 2048));
   return wuffs_private_impl__status__ensure_not_a_suspension(v_status);
 }
@@ -96423,7 +96597,6 @@ const char wuffs_webp__error__bad_transform[] = "#webp: bad transform";
 const char wuffs_webp__error__short_chunk[] = "#webp: short chunk";
 const char wuffs_webp__error__truncated_input[] = "#webp: truncated input";
 const char wuffs_webp__error__unsupported_number_of_huffman_groups[] = "#webp: unsupported number of Huffman groups";
-const char wuffs_webp__error__unsupported_transform_after_color_indexing_transform[] = "#webp: unsupported transform after color indexing transform";
 const char wuffs_webp__error__unsupported_webp_file[] = "#webp: unsupported WebP file";
 const char wuffs_webp__error__internal_error_inconsistent_huffman_code[] = "#webp: internal error: inconsistent Huffman code";
 const char wuffs_webp__error__internal_error_inconsistent_huffman_decoder_state[] = "#webp: internal error: inconsistent Huffman decoder state";
@@ -99223,6 +99396,16 @@ wuffs_webp__decoder__apply_transform_cross_color__choosy_default(
         v_b = a_pix.ptr[0u];
         v_g = a_pix.ptr[1u];
         v_r = a_pix.ptr[2u];
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+#endif
+        v_r += ((uint8_t)((((uint32_t)(wuffs_base__utility__sign_extend_convert_u8_u32(v_g) * v_g2r)) >> 5u)));
+        v_b += ((uint8_t)((((uint32_t)(wuffs_base__utility__sign_extend_convert_u8_u32(v_g) * v_g2b)) >> 5u)));
+        v_b += ((uint8_t)((((uint32_t)(wuffs_base__utility__sign_extend_convert_u8_u32(v_r) * v_r2b)) >> 5u)));
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
         if (v_do_subtract_green) {
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
@@ -99234,16 +99417,6 @@ wuffs_webp__decoder__apply_transform_cross_color__choosy_default(
 #pragma GCC diagnostic pop
 #endif
         }
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
-#endif
-        v_r += ((uint8_t)((((uint32_t)(wuffs_base__utility__sign_extend_convert_u8_u32(v_g) * v_g2r)) >> 5u)));
-        v_b += ((uint8_t)((((uint32_t)(wuffs_base__utility__sign_extend_convert_u8_u32(v_g) * v_g2b)) >> 5u)));
-        v_b += ((uint8_t)((((uint32_t)(wuffs_base__utility__sign_extend_convert_u8_u32(v_r) * v_r2b)) >> 5u)));
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
         a_pix.ptr[0u] = v_b;
         a_pix.ptr[2u] = v_r;
         a_pix = wuffs_base__slice_u8__subslice_i(a_pix, 4u);
@@ -99536,11 +99709,6 @@ wuffs_webp__decoder__apply_transform_cross_color_x86_avx2(
               (((uint64_t)(a_pix.len)) >= 32u) &&
               (v_x_end <= self->private_impl.f_width)) {
             v_pix = _mm256_lddqu_si256((const __m256i*)(const void*)(a_pix.ptr));
-            if (v_do_subtract_green) {
-              v_sg_green = _mm256_and_si256(v_pix, v_sg_mask);
-              v_sg_br = _mm256_or_si256(_mm256_srli_epi32(v_sg_green, (int32_t)(8u)), _mm256_slli_epi32(v_sg_green, (int32_t)(8u)));
-              v_pix = _mm256_add_epi8(v_pix, v_sg_br);
-            }
             v_green_i16 = _mm256_shuffle_epi8(v_pix, v_green_shuf);
             v_green_i16 = _mm256_srai_epi16(_mm256_slli_epi16(v_green_i16, (int32_t)(8u)), (int32_t)(8u));
             v_delta_r_i16 = _mm256_srai_epi16(_mm256_mullo_epi16(v_green_i16, v_g2r_vec), (int32_t)(5u));
@@ -99554,6 +99722,11 @@ wuffs_webp__decoder__apply_transform_cross_color_x86_avx2(
             v_delta_b_packed = _mm256_shuffle_epi8(v_delta_b_i16, v_b_scatter);
             v_pix = _mm256_add_epi8(v_pix, v_delta_r_packed);
             v_pix = _mm256_add_epi8(v_pix, v_delta_b_packed);
+            if (v_do_subtract_green) {
+              v_sg_green = _mm256_and_si256(v_pix, v_sg_mask);
+              v_sg_br = _mm256_or_si256(_mm256_srli_epi32(v_sg_green, (int32_t)(8u)), _mm256_slli_epi32(v_sg_green, (int32_t)(8u)));
+              v_pix = _mm256_add_epi8(v_pix, v_sg_br);
+            }
             _mm256_storeu_si256((__m256i*)(void*)(a_pix.ptr), v_pix);
             a_pix = wuffs_base__slice_u8__subslice_i(a_pix, 32u);
             v_x += 8u;
@@ -99564,6 +99737,16 @@ wuffs_webp__decoder__apply_transform_cross_color_x86_avx2(
             v_b = a_pix.ptr[0u];
             v_g = a_pix.ptr[1u];
             v_r = a_pix.ptr[2u];
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+#endif
+            v_r += ((uint8_t)((((uint32_t)(wuffs_base__utility__sign_extend_convert_u8_u32(v_g) * v_g2r)) >> 5u)));
+            v_b += ((uint8_t)((((uint32_t)(wuffs_base__utility__sign_extend_convert_u8_u32(v_g) * v_g2b)) >> 5u)));
+            v_b += ((uint8_t)((((uint32_t)(wuffs_base__utility__sign_extend_convert_u8_u32(v_r) * v_r2b)) >> 5u)));
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
             if (v_do_subtract_green) {
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
@@ -99575,16 +99758,6 @@ wuffs_webp__decoder__apply_transform_cross_color_x86_avx2(
 #pragma GCC diagnostic pop
 #endif
             }
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
-#endif
-            v_r += ((uint8_t)((((uint32_t)(wuffs_base__utility__sign_extend_convert_u8_u32(v_g) * v_g2r)) >> 5u)));
-            v_b += ((uint8_t)((((uint32_t)(wuffs_base__utility__sign_extend_convert_u8_u32(v_g) * v_g2b)) >> 5u)));
-            v_b += ((uint8_t)((((uint32_t)(wuffs_base__utility__sign_extend_convert_u8_u32(v_r) * v_r2b)) >> 5u)));
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
             a_pix.ptr[0u] = v_b;
             a_pix.ptr[2u] = v_r;
             a_pix = wuffs_base__slice_u8__subslice_i(a_pix, 4u);
@@ -100770,10 +100943,7 @@ wuffs_webp__decoder__do_decode_image_config_limited_vp8l(
     v_c32 >>= 14u;
     self->private_impl.f_height = ((v_c32 & 16383u) + 1u);
     v_c32 >>= 14u;
-    self->private_impl.f_pixfmt = 2415954056u;
-    if ((v_c32 & 1u) != 0u) {
-      self->private_impl.f_pixfmt = 2164295816u;
-    }
+    self->private_impl.f_pixfmt = 2164295816u;
     v_c32 >>= 1u;
     if (v_c32 != 0u) {
       status = wuffs_base__make_status(wuffs_webp__error__bad_header);
@@ -101762,6 +101932,7 @@ wuffs_webp__decoder__do_decode_frame(
   uint8_t v_c8 = 0;
   uint32_t v_has_more = 0;
   uint32_t v_width = 0;
+  uint32_t v_saved_width = 0;
   wuffs_base__slice_u8 v_dst = {0};
   wuffs_base__slice_u8 v_tile_data = {0};
   wuffs_base__status v_status = wuffs_base__make_status(NULL);
@@ -101938,6 +102109,15 @@ wuffs_webp__decoder__do_decode_frame(
         wuffs_base__cpu_arch__have_x86_avx2() ? &wuffs_webp__decoder__apply_transform_subtract_green_x86_avx2 :
 #endif
         self->private_impl.choosy_apply_transform_subtract_green);
+    v_saved_width = self->private_impl.f_width;
+    if (self->private_impl.f_seen_transform[3u]) {
+      self->private_impl.f_width = self->private_impl.f_color_indexing_width;
+      if ((((uint64_t)(self->private_impl.f_workbuf_offset_for_color_indexing)) <= ((uint64_t)(self->private_impl.f_workbuf_offset_for_transform[0u]))) && (((uint64_t)(self->private_impl.f_workbuf_offset_for_transform[0u])) <= ((uint64_t)(a_workbuf.len)))) {
+        v_pix = wuffs_base__slice_u8__subslice_ij(a_workbuf,
+            ((uint64_t)(self->private_impl.f_workbuf_offset_for_color_indexing)),
+            ((uint64_t)(self->private_impl.f_workbuf_offset_for_transform[0u])));
+      }
+    }
     v_which = self->private_impl.f_n_transforms;
     while (v_which > 0u) {
       v_which -= 1u;
@@ -101964,10 +102144,15 @@ wuffs_webp__decoder__do_decode_frame(
       } else if (v_transform_type == 2u) {
         wuffs_webp__decoder__apply_transform_subtract_green(self, v_pix);
       } else {
+        self->private_impl.f_width = v_saved_width;
+        if (((uint64_t)(self->private_impl.f_workbuf_offset_for_transform[0u])) <= ((uint64_t)(a_workbuf.len))) {
+          v_pix = wuffs_base__slice_u8__subslice_j(a_workbuf, ((uint64_t)(self->private_impl.f_workbuf_offset_for_transform[0u])));
+        }
         wuffs_webp__decoder__apply_transform_color_indexing(self, v_pix);
         v_width = self->private_impl.f_width;
       }
     }
+    self->private_impl.f_width = v_saved_width;
     v_status = wuffs_webp__decoder__swizzle(self, a_dst, v_pix, a_blend);
     if ( ! wuffs_base__status__is_ok(&v_status)) {
       status = v_status;
@@ -102014,6 +102199,7 @@ wuffs_webp__decoder__decode_transform(
   uint8_t v_c8 = 0;
   uint32_t v_transform_type = 0;
   uint32_t v_tile_size_log2 = 0;
+  uint32_t v_effective_width = 0;
   wuffs_base__slice_u8 v_p = {0};
 
   const uint8_t* iop_a_src = NULL;
@@ -102031,6 +102217,7 @@ wuffs_webp__decoder__decode_transform(
   if (coro_susp_point) {
     v_transform_type = self->private_data.s_decode_transform.v_transform_type;
     v_tile_size_log2 = self->private_data.s_decode_transform.v_tile_size_log2;
+    v_effective_width = self->private_data.s_decode_transform.v_effective_width;
   }
   switch (coro_susp_point) {
     WUFFS_BASE__COROUTINE_SUSPENSION_POINT_0;
@@ -102058,9 +102245,6 @@ wuffs_webp__decoder__decode_transform(
     if (self->private_impl.f_seen_transform[v_transform_type] || (self->private_impl.f_n_transforms >= 4u)) {
       status = wuffs_base__make_status(wuffs_webp__error__bad_transform);
       goto exit;
-    } else if (self->private_impl.f_seen_transform[3u]) {
-      status = wuffs_base__make_status(wuffs_webp__error__unsupported_transform_after_color_indexing_transform);
-      goto exit;
     }
     self->private_impl.f_seen_transform[v_transform_type] = true;
     self->private_impl.f_transform_type[self->private_impl.f_n_transforms] = ((uint8_t)(v_transform_type));
@@ -102087,6 +102271,10 @@ wuffs_webp__decoder__decode_transform(
       self->private_impl.f_transform_tile_size_log2[v_transform_type] = ((uint8_t)(v_tile_size_log2));
       self->private_impl.f_bits >>= 3u;
       self->private_impl.f_n_bits -= 3u;
+      v_effective_width = self->private_impl.f_width;
+      if (self->private_impl.f_seen_transform[3u]) {
+        v_effective_width = self->private_impl.f_color_indexing_width;
+      }
       if (a_src) {
         a_src->meta.ri = ((size_t)(iop_a_src - a_src->data.ptr));
       }
@@ -102123,7 +102311,7 @@ wuffs_webp__decoder__decode_transform(
               ((uint64_t)(self->private_impl.f_workbuf_offset_for_transform[(v_transform_type + 1u)])),
               ((uint64_t)(self->private_impl.f_workbuf_offset_for_transform[(v_transform_type + 2u)]))),
               a_src,
-              ((self->private_impl.f_width + ((((uint32_t)(1u)) << v_tile_size_log2) - 1u)) >> v_tile_size_log2),
+              ((v_effective_width + ((((uint32_t)(1u)) << v_tile_size_log2) - 1u)) >> v_tile_size_log2),
               ((self->private_impl.f_height + ((((uint32_t)(1u)) << v_tile_size_log2) - 1u)) >> v_tile_size_log2),
               wuffs_base__utility__empty_slice_u8(),
               0u);
@@ -102243,6 +102431,7 @@ wuffs_webp__decoder__decode_transform(
   self->private_impl.p_decode_transform = wuffs_base__status__is_suspension(&status) ? coro_susp_point : 0;
   self->private_data.s_decode_transform.v_transform_type = v_transform_type;
   self->private_data.s_decode_transform.v_tile_size_log2 = v_tile_size_log2;
+  self->private_data.s_decode_transform.v_effective_width = v_effective_width;
 
   goto exit;
   exit:

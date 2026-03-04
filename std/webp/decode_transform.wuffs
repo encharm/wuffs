@@ -337,13 +337,15 @@ pri func decoder.apply_transform_cross_color!(pix: slice base.u8, tile_data: ros
                 b = args.pix[0]
                 g = args.pix[1]
                 r = args.pix[2]
+                // Apply cross_color first, then subtract_green. The r2b term
+                // must use red before green is added (subtract_green order).
+                r ~mod+= (((this.util.sign_extend_convert_u8_u32(a: g) ~mod* g2r) >> 5) & 0xFF) as base.u8
+                b ~mod+= (((this.util.sign_extend_convert_u8_u32(a: g) ~mod* g2b) >> 5) & 0xFF) as base.u8
+                b ~mod+= (((this.util.sign_extend_convert_u8_u32(a: r) ~mod* r2b) >> 5) & 0xFF) as base.u8
                 if do_subtract_green {
                     r ~mod+= g
                     b ~mod+= g
                 }
-                r ~mod+= (((this.util.sign_extend_convert_u8_u32(a: g) ~mod* g2r) >> 5) & 0xFF) as base.u8
-                b ~mod+= (((this.util.sign_extend_convert_u8_u32(a: g) ~mod* g2b) >> 5) & 0xFF) as base.u8
-                b ~mod+= (((this.util.sign_extend_convert_u8_u32(a: r) ~mod* r2b) >> 5) & 0xFF) as base.u8
                 args.pix[0] = b
                 args.pix[2] = r
                 args.pix = args.pix[4 ..]

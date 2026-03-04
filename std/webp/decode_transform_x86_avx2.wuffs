@@ -211,14 +211,6 @@ pri func decoder.apply_transform_cross_color_x86_avx2!(pix: slice base.u8, tile_
                     {
                         pix = util.make_m256i_slice256(a: args.pix)
 
-                        // Fused subtract_green: add green to R and B bytes.
-                        if do_subtract_green {
-                            sg_green = pix._mm256_and_si256(b: sg_mask)
-                            sg_br = sg_green._mm256_srli_epi32(imm8: 8)._mm256_or_si256(
-                                    b: sg_green._mm256_slli_epi32(imm8: 8))
-                            pix = pix._mm256_add_epi8(b: sg_br)
-                        }
-
                         // Extract green to i16, sign-extend.
                         green_i16 = pix._mm256_shuffle_epi8(b: green_shuf)
                         green_i16 = green_i16._mm256_slli_epi16(imm8: 8)._mm256_srai_epi16(imm8: 8)
@@ -229,7 +221,8 @@ pri func decoder.apply_transform_cross_color_x86_avx2!(pix: slice base.u8, tile_
                         // delta_b_from_green = (green * g2b) >> 5
                         delta_b_i16 = green_i16._mm256_mullo_epi16(b: g2b_vec)._mm256_srai_epi16(imm8: 5)
 
-                        // Compute new_r (for r2b contribution).
+                        // Compute new_r (for r2b contribution) from ORIGINAL red
+                        // (before subtract_green), since cross_color uses coded red.
                         red_i16 = pix._mm256_shuffle_epi8(b: red_shuf)
                         red_i16 = red_i16._mm256_slli_epi16(imm8: 8)._mm256_srai_epi16(imm8: 8)
                         new_r_i16 = red_i16._mm256_add_epi16(b: delta_r_i16)
@@ -245,6 +238,15 @@ pri func decoder.apply_transform_cross_color_x86_avx2!(pix: slice base.u8, tile_
                         delta_b_packed = delta_b_i16._mm256_shuffle_epi8(b: b_scatter)
                         pix = pix._mm256_add_epi8(b: delta_r_packed)
                         pix = pix._mm256_add_epi8(b: delta_b_packed)
+
+                        // Fused subtract_green: add green to R and B AFTER
+                        // cross_color, so r2b uses the coded red, not red+green.
+                        if do_subtract_green {
+                            sg_green = pix._mm256_and_si256(b: sg_mask)
+                            sg_br = sg_green._mm256_srli_epi32(imm8: 8)._mm256_or_si256(
+                                    b: sg_green._mm256_slli_epi32(imm8: 8))
+                            pix = pix._mm256_add_epi8(b: sg_br)
+                        }
 
                         pix.store_slice256!(a: args.pix[.. 32])
                         args.pix = args.pix[32 ..]
@@ -265,13 +267,13 @@ pri func decoder.apply_transform_cross_color_x86_avx2!(pix: slice base.u8, tile_
                         b = args.pix[0]
                         g = args.pix[1]
                         r = args.pix[2]
+                        r ~mod+= (((this.util.sign_extend_convert_u8_u32(a: g) ~mod* g2r) >> 5) & 0xFF) as base.u8
+                        b ~mod+= (((this.util.sign_extend_convert_u8_u32(a: g) ~mod* g2b) >> 5) & 0xFF) as base.u8
+                        b ~mod+= (((this.util.sign_extend_convert_u8_u32(a: r) ~mod* r2b) >> 5) & 0xFF) as base.u8
                         if do_subtract_green {
                             r ~mod+= g
                             b ~mod+= g
                         }
-                        r ~mod+= (((this.util.sign_extend_convert_u8_u32(a: g) ~mod* g2r) >> 5) & 0xFF) as base.u8
-                        b ~mod+= (((this.util.sign_extend_convert_u8_u32(a: g) ~mod* g2b) >> 5) & 0xFF) as base.u8
-                        b ~mod+= (((this.util.sign_extend_convert_u8_u32(a: r) ~mod* r2b) >> 5) & 0xFF) as base.u8
                         args.pix[0] = b
                         args.pix[2] = r
                         args.pix = args.pix[4 ..]

@@ -305,7 +305,14 @@ pri func decoder.precompute_filter_strengths!() {
                     }
                 }
                 if level > 63 {
-                    level = 0
+                    // Distinguish overflow (64..189) from underflow
+                    // (u32 wrap from negative). Level started in [0,63],
+                    // deltas in [-63,63], so overflow max is 189.
+                    if (level & 0x8000_0000) <> 0 {
+                        level = 0
+                    } else {
+                        level = 63
+                    }
                 }
             }
 

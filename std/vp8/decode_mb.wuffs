@@ -177,7 +177,10 @@ pri func decoder.decode_frame_mb!(src: base.io_reader, dst: ptr base.pixel_buffe
             }
 
             // Refill partition 1 (coefficient data) buffer when running low.
-            if (this.p1_ri ~mod+ 256) >= this.p1_wi {
+            // Threshold 2048 ensures the buffer has enough data for a full
+            // MB's coefficient decode (~1200 bytes worst case), preventing
+            // mid-block buffer exhaustion that would corrupt the bool state.
+            if (this.p1_ri ~mod+ 2048) >= this.p1_wi {
                 if this.multi_partition {
                     this.p1_fill_from_workbuf!(workbuf: args.workbuf)
                 } else {
@@ -197,12 +200,12 @@ pri func decoder.decode_frame_mb!(src: base.io_reader, dst: ptr base.pixel_buffe
         // while the data is still cache-hot.
         if this.mb_y > 0 {
             prev_mby = this.mb_y - 1
-            if this.filter_type == 1 {
+            if (this.filter_type == 1) and (this.filter_level > 0) {
                 this.apply_simple_filter_row!(workbuf: args.workbuf, mby: prev_mby)
             } else if this.filter_level > 0 {
                 this.apply_normal_filter_row!(workbuf: args.workbuf, mby: prev_mby)
             }
-            swizzle_status = this.swizzle_mb_row!(dst: args.dst, workbuf: args.workbuf, mby: prev_mby)
+            swizzle_status = this.swizzle_mb_row!(dst: args.dst, workbuf: args.workbuf, mby: prev_mby, is_last: false)
         }
 
         if this.mb_y < 0x3FF {
@@ -214,12 +217,12 @@ pri func decoder.decode_frame_mb!(src: base.io_reader, dst: ptr base.pixel_buffe
     if this.mb_height > 0 {
         prev_mby = this.mb_height - 1
         if prev_mby <= 0x3FF {
-            if this.filter_type == 1 {
+            if (this.filter_type == 1) and (this.filter_level > 0) {
                 this.apply_simple_filter_row!(workbuf: args.workbuf, mby: prev_mby)
             } else if this.filter_level > 0 {
                 this.apply_normal_filter_row!(workbuf: args.workbuf, mby: prev_mby)
             }
-            swizzle_status = this.swizzle_mb_row!(dst: args.dst, workbuf: args.workbuf, mby: prev_mby)
+            swizzle_status = this.swizzle_mb_row!(dst: args.dst, workbuf: args.workbuf, mby: prev_mby, is_last: true)
         }
     }
 
@@ -660,9 +663,14 @@ pri func decoder.clear_mb_nz_context!() {
         this.left_nz[6 + i] = 0
         i += 1
     }
-    // Clear Y2 context.
-    this.above_nz_y2[this.mb_x] = 0
-    this.left_nz_y2 = 0
+    // Clear Y2 context only for Y16 mode. B_PRED (mode >= 4) has no Y2 block,
+    // so its skip path must preserve the Y2 NZ state from the previous MB at
+    // this position (matching libwebp's VP8DecodeMB which only clears nz_dc
+    // when !is_i4x4).
+    if this.mb_luma_mode < 4 {
+        this.above_nz_y2[this.mb_x] = 0
+        this.left_nz_y2 = 0
+    }
 }
 
 pri func decoder.decode_mb_coefficients!() {
