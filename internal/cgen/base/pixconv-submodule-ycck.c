@@ -33,6 +33,28 @@ wuffs_private_impl__swizzle_ycc__convert_3_rgbx_x86_avx2(
     const uint8_t* up1,
     const uint8_t* up2);
 
+WUFFS_BASE__MAYBE_ATTRIBUTE_TARGET("pclmul,popcnt,sse4.2,avx2")
+static void  //
+wuffs_private_impl__swizzle_ycc_bt601__convert_3_bgrx_x86_avx2(
+    wuffs_base__pixel_buffer* dst,
+    uint32_t x,
+    uint32_t x_end,
+    uint32_t y,
+    const uint8_t* up0,
+    const uint8_t* up1,
+    const uint8_t* up2);
+
+WUFFS_BASE__MAYBE_ATTRIBUTE_TARGET("pclmul,popcnt,sse4.2,avx2")
+static void  //
+wuffs_private_impl__swizzle_ycc_bt601__convert_3_rgbx_x86_avx2(
+    wuffs_base__pixel_buffer* dst,
+    uint32_t x,
+    uint32_t x_end,
+    uint32_t y,
+    const uint8_t* up0,
+    const uint8_t* up1,
+    const uint8_t* up2);
+
 #if defined(__GNUC__) && !defined(__clang__)
 // No-op.
 #else
@@ -1530,11 +1552,25 @@ wuffs_base__pixel_swizzler__swizzle_ycck(
       case WUFFS_BASE__PIXEL_FORMAT__BGRA_NONPREMUL:
       case WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL:
       case WUFFS_BASE__PIXEL_FORMAT__BGRX:
+#if defined(WUFFS_PRIVATE_IMPL__CPU_ARCH__X86_64_V3)
+        if (wuffs_base__cpu_arch__have_x86_avx2()) {
+          conv3func =
+              &wuffs_private_impl__swizzle_ycc_bt601__convert_3_bgrx_x86_avx2;
+          break;
+        }
+#endif
         conv3func = &wuffs_private_impl__swizzle_ycc_bt601__convert_3_bgrx;
         break;
       case WUFFS_BASE__PIXEL_FORMAT__RGBA_NONPREMUL:
       case WUFFS_BASE__PIXEL_FORMAT__RGBA_PREMUL:
       case WUFFS_BASE__PIXEL_FORMAT__RGBX:
+#if defined(WUFFS_PRIVATE_IMPL__CPU_ARCH__X86_64_V3)
+        if (wuffs_base__cpu_arch__have_x86_avx2()) {
+          conv3func =
+              &wuffs_private_impl__swizzle_ycc_bt601__convert_3_rgbx_x86_avx2;
+          break;
+        }
+#endif
         conv3func = &wuffs_private_impl__swizzle_ycc_bt601__convert_3_rgbx;
         break;
       default:
